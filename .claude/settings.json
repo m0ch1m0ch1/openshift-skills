@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash .claude/skills/openshift-runbook/scripts/runbook.sh cluster:*)",
+      "Bash(bash .claude/skills/openshift-runbook/scripts/runbook.sh list:*)",
+      "Bash(bash .claude/skills/openshift-runbook/scripts/runbook.sh new:*)",
+      "Bash(bash .claude/skills/openshift-runbook/scripts/runbook.sh lint:*)",
+      "Bash(bash .claude/skills/openshift-runbook/scripts/runbook.sh plan:*)",
+      "Bash(bash .claude/skills/openshift-runbook/scripts/runbook.sh doc:*)",
+      "Bash(oc get:*)",
+      "Bash(oc describe:*)",
+      "Bash(oc logs:*)",
+      "Bash(oc whoami:*)",
+      "Bash(oc events:*)",
+      "Bash(oc api-resources:*)",
+      "Bash(oc explain:*)",
+      "Bash(oc version:*)",
+      "Bash(oc image info:*)",
+      "Bash(oc config current-context:*)"
+    ]
+  }
+}
