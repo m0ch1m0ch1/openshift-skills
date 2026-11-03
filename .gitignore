@@ -1,2 +1,4 @@
 .DS_Store
 runbooks/
+must-gather-analyses/
+.claude/settings.local.json
