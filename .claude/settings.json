@@ -2,7 +2,6 @@
   "permissions": {
     "allow": [
       "Bash(bash .claude/skills/openshift-runbook/scripts/runbook.sh cluster:*)",
-      "Bash(bash .claude/skills/openshift-runbook/scripts/runbook.sh list:*)",
       "Bash(bash .claude/skills/openshift-runbook/scripts/runbook.sh new:*)",
       "Bash(bash .claude/skills/openshift-runbook/scripts/runbook.sh lint:*)",
       "Bash(bash .claude/skills/openshift-runbook/scripts/runbook.sh plan:*)",

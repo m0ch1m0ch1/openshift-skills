@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # OpenShift の手順を実クラスタで検証し、手順書 (runbook.md) を作る
 #
+# openshift-runbook スキルが、次の順で使う (cluster → new → lint → plan → run。失敗してやり直すときは cleanup)
+#
 # 使い方:
 #   runbook.sh cluster                  接続先のクラスタを確認する (読み取りのみ)。公式ドキュメントの URL も表示する
-#   runbook.sh list                     手順の一覧と、検証結果・リソースの状態 (クラスタに接続しない)
 #   runbook.sh new     <name>           ひな形から手順のディレクトリを作る
 #   runbook.sh lint    <name>           静的チェック (クラスタは変更しない)
 #   runbook.sh plan    <name>           成功条件、パラメータ、適用するリソース、既に存在するもの、前回から残っているものを表示する (読み取りのみ)
@@ -12,10 +13,10 @@
 #                                       終了コード: 0=PASS 1=手順が失敗 2=切り戻し/クリーンアップに問題 3=開始できない (何も変更していない) 130=中断
 #                                       --cleanup: rollback.sh と cleanup で元に戻す
 #                                       --keep:    作成したリソースを残す (rollback.sh は検証されない)
-#   runbook.sh cleanup <name>           rollback.sh を実行し、検証で適用した YAML を削除する
+#   runbook.sh cleanup <name>           検証で残ったリソースを元に戻す (rollback.sh を実行し、適用した YAML を削除する)
 #                                       終了コード: 0=完了 1=削除できない/確認できない 3=開始できない (接続先が検証したときと違うなど)
 #   (plan は、[NG] があると 1 を返す。そのほかのコマンドの引数の誤りは 3)
-#   runbook.sh doc     <name>           runbook.md を生成 (クラスタに接続しない)
+#   runbook.sh doc     <name>           runbook.md を作り直す (run の最後にも実行される。クラスタに接続しない)
 #
 # 環境変数:
 #   RUNBOOK_DIR      手順を置くディレクトリ (既定: Git リポジトリのルートの runbooks/。Git の外ならカレントディレクトリの runbooks/)
@@ -151,7 +152,7 @@ existing() {
   rm -f "$err"
 }
 
-# --- cluster / list / new / lint / plan ---
+# --- cluster / new / lint / plan ---
 
 # 終了コード: 0=OK 10=oc が無い 20=未ログイン/認証切れ 30=到達不可・TLS・その他
 cmd_cluster() {
@@ -176,39 +177,13 @@ cmd_cluster() {
 
 # new <name>: ひな形から手順のディレクトリを作る
 cmd_new() {
-  [ ! -e "$DIR/$SLUG" ] || die "$DIR/$SLUG は既にあります"
+  [ ! -e "$DIR/$SLUG" ] || { echo "[NG] $DIR/$SLUG は既にあります"; echo "案内: 別の手順名にする (既存の手順は再利用しない)"; exit 3; }
   mkdir -p "$DIR/$SLUG/manifests" "$DIR/$SLUG/scripts"
   local v; v="$(minor)"
   sed "s/VERSION/${v:-TODO}/" "$SKILL_DIR/templates/spec.md" > "$DIR/$SLUG/spec.md"
   cp "$SKILL_DIR/templates/rollback.sh" "$DIR/$SLUG/scripts/rollback.sh"
   echo "[OK] $DIR/$SLUG/ を作りました"
-  echo "次: spec.md と scripts/rollback.sh の TODO を埋め、manifests/NN-name.yaml (YAML で書けない作業は scripts/NN-name.sh) と scripts/NN-name.check.sh を作って、runbook.sh lint $SLUG"
-}
-
-# 状態は検証の記録から判断する (クラスタには接続しない)
-cmd_list() {
-  local d r st
-  ls "$DIR"/*/spec.md >/dev/null 2>&1 || { echo "$DIR/ に手順はありません"; return 0; }
-  echo "| 手順名 | タイトル | 検証結果 | リソースの状態 |"
-  echo "|---|---|---|---|"
-  for d in "$DIR"/*/; do
-    [ -f "$d/spec.md" ] || continue
-    (
-      cd "$d"
-      r="$(meta result)"
-      if [ -z "$r" ]; then r=未検証
-      else
-        r="${r}（$(meta date | tr T ' ')）"
-        [ -z "$(meta fp)" ] || [ "$(meta fp)" = "$(fingerprint)" ] || r="${r} ※検証後に変更あり"
-      fi
-      if leftover; then
-        [ "$(meta keep)" = 1 ] && st=適用したまま || st="削除が未完了（cleanup が必要）"
-      elif [ -f run/result.md ]; then st=クリーンアップ済み
-      else st=未適用
-      fi
-      echo "| $(basename "$d") | $(title spec.md) | $r | $st |"
-    )
-  done
+  echo "次: spec.md の '## 成功条件 (DoD)' を書いて合意を得る。合意したら、spec.md の残りと scripts/rollback.sh の TODO を埋め、manifests/NN-name.yaml (YAML で書けない作業は scripts/NN-name.sh) と scripts/NN-name.check.sh を作って、runbook.sh lint $SLUG"
 }
 
 cmd_lint() {
@@ -245,7 +220,9 @@ cmd_lint() {
   local nsd cls key
   kinds() { oc api-resources --namespaced="$1" --no-headers --request-timeout=10s 2>/dev/null | awk '{v = $(NF-2); sub(/\/?[^\/]*$/, "", v); printf "%s/%s ", v, $NF}'; }
   [ $has_oc = 1 ] && { nsd=" $(kinds true)"; cls=" $(kinds false)"; } || { nsd=" "; cls=" "; }
-  [ "$CMD" != run ] || [ "$nsd" != " " ] || ng "クラスタの API 情報を取得できないため、namespace の要否を確認できません"
+  if [ "$nsd" = " " ] && [ $has_oc = 1 ]; then
+    [ "$CMD" = run ] && ng "クラスタの API 情報を取得できないため、namespace の要否を確認できません" || echo "[WARN] クラスタの API 情報を取得できないため、namespace の要否を確認していません"
+  fi
   for f in $(grep -l TODO spec.md manifests/* scripts/* 2>/dev/null); do ng "$f: TODO が残っています"; done
   [ -n "$(steps)" ] || ng "manifests/ か scripts/ にステップがありません"
   [ -f scripts/rollback.sh ] || ng "scripts/rollback.sh がありません"
@@ -342,7 +319,8 @@ cmd_plan() {
     echo
     if ! same_target; then target_ng; return $ng; fi
     echo "[NG] 前回の検証のリソースが残っている可能性があります。cleanup で次のものを元に戻します:"
-    if rollback_needed; then
+    # rollback.sh に実行する処理が無ければ、表示しない
+    if rollback_needed && [ -n "$(rollback_summary)" ]; then
       echo "  - scripts/rollback.sh を実行:"
       rollback_summary | sed 's/^/      /'
     fi
@@ -440,7 +418,8 @@ cmd_run() {
     rb=不要; cl=不要; echo "[SKIP] rollback / cleanup (何も変更していません)"; rm -f run/pending
   else
     bash <(instrument scripts/rollback.sh rollback) > run/logs/rollback.log 2>&1 || rb=NG; echo "[$rb] rollback"
-    delete_applied > run/logs/cleanup.log 2>&1 || cl=NG; echo "[$cl] cleanup"
+    # rollback.sh が止まったとき (この手順で作成していないリソースがあるなど) は、YAML も削除しない。ユーザーが判断する
+    if [ $rb = OK ]; then delete_applied > run/logs/cleanup.log 2>&1 || cl=NG; else cl=未実施; fi; echo "[$cl] cleanup"
     [ $rb = OK ] && [ $cl = OK ] && rm -f run/pending run/touched
   fi
   trap - INT TERM
@@ -469,9 +448,14 @@ cmd_run() {
   } > run/result.md
   echo "結果: $result → $DIR/$SLUG/run/result.md"
   cmd_doc
-  [ -n "$failed" ] && echo "次: $DIR/$SLUG/run/logs/$failed.log で原因を調べる。リソースが残っていれば先に runbook.sh cleanup $SLUG を行い、ファイルを直して run をやり直す"
-  [ -z "$failed" ] && [ $result = FAIL ] && echo "次: $DIR/$SLUG/run/logs/ の rollback.log と cleanup.log で原因を調べ、runbook.sh cleanup $SLUG"
-  [ $keep = 1 ] && leftover && echo "リソースは残っています。元に戻すときは: runbook.sh cleanup $SLUG"
+  if [ $result = FAIL ]; then
+    if [ -n "$failed" ]; then echo "次: $DIR/$SLUG/run/logs/$failed.log で原因を調べる"
+    elif [ $rb = NG ]; then echo "次: $DIR/$SLUG/run/logs/rollback.log で原因を調べる"
+    else echo "次: $DIR/$SLUG/run/logs/cleanup.log で原因を調べる"; fi
+    if leftover && [ $keep = 0 ]; then echo "次: リソースが残っている。ファイルを直す前に runbook.sh plan $SLUG で確認し、runbook.sh cleanup $SLUG (rollback.sh の不具合なら、rollback.sh だけを先に直す)"
+    elif [ -n "$failed" ]; then echo "次: ファイルを直して run をやり直す"; fi
+  fi
+  [ $keep = 1 ] && leftover && echo "案内: リソースは残っています。元に戻すときは、runbook.md の「切り戻し」の手順を実行する"
   [ -n "$failed" ] && return 1
   [ $result = PASS ] || return 2
   return 0
@@ -484,9 +468,9 @@ cmd_cleanup() {
   same_target || { target_ng; return 3; }
   pin_kubeconfig || return 3
   if rollback_needed; then
-    bash <(instrument scripts/rollback.sh rollback) || { echo "[NG] rollback.sh が失敗しました"; return 1; }
+    bash <(instrument scripts/rollback.sh rollback) || { echo "[NG] rollback.sh が失敗しました"; echo "案内: 上の出力と読み取りだけの調査で原因を調べる。この手順で作成していないリソースがあって止まった場合は、どうするかをユーザーに聞く"; return 1; }
   fi
-  delete_applied || return 1
+  delete_applied || { echo "案内: 残ったリソースを読み取りだけの調査で調べる (finalizer など)。強制削除は、ユーザーの了承を得てから行う"; return 1; }
   rm -f run/pending run/touched
   echo "[OK] クリーンアップ完了"
 }
@@ -621,7 +605,7 @@ cmd_doc() {
     echo "## 前提条件"
     echo
     spec_section 前提条件
-    echo "- コマンドは、この手順書があるディレクトリで実行する。"
+    echo "- コマンドは、この手順書があるディレクトリ (manifests/ と scripts/ がある場所) で実行する。"
     [ -n "$(spec_other)" ] && { echo; spec_other; }
     echo
     echo "## 手順"
@@ -674,7 +658,15 @@ cmd_doc() {
     echo "## 切り戻し"
     echo
     echo "この手順で作成・変更したものを削除し、手順を実行する前の状態に戻します。"
+    # リソースを残して検証した (--keep) ときは、切り戻しの手順を実行していない
+    if { [ "$result" = PASS ] || [ "$result" = FAIL ]; } && [ "$(meta keep)" = 1 ]; then
+      admonition 重要 "この切り戻しの手順は、検証では実行していません。実行する前に、内容を確認してください。" ""
+    fi
     notes scripts/rollback.sh ""
+    # 複数のブロックは 1 つのスクリプトとして実行される (変数を引き継ぎ、止める条件で以降を実行しない)
+    if [ "$(for ((k = 1; k <= $(blocks scripts/rollback.sh); k++)); do block_part scripts/rollback.sh $k code | head -1; done | grep -c .)" -gt 1 ]; then
+      admonition 注記 "次のコマンドは、同じシェルで上から順に実行します。途中で「止めます」と表示された場合は、それ以降のコマンドを実行しないでください。" ""
+    fi
     echo
     echo "### 手順"
     local rbn=0 k yamls out
@@ -699,17 +691,16 @@ cmd_doc() {
 
 # --- main ---
 
-usage() { awk 'NR == 1 {next} /^#/ {sub(/^# ?/, ""); print; next} {exit}' "$0"; exit 1; }
+usage() { awk 'NR == 1 {next} /^#/ {sub(/^# ?/, ""); print; next} {exit}' "$0"; exit 3; }
 CMD="${1:-}"; SLUG="${2:-}"
 case "$CMD" in
   cluster) cmd_cluster;;
-  list)  cmd_list;;
   new)
     [[ $SLUG =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "usage: runbook.sh new <name> (英小文字・数字・ハイフン)"
     cmd_new;;
   lint|plan|run|cleanup|doc)
     [[ $SLUG =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "usage: runbook.sh $CMD <name>"
-    cd "$DIR/$SLUG" 2>/dev/null || die "$DIR/$SLUG がありません (runbook.sh list で手順名を確認する)"
+    cd "$DIR/$SLUG" 2>/dev/null || die "$DIR/$SLUG がありません"
     "cmd_$CMD" "${@:3}";;
   *) usage;;
 esac
