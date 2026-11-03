@@ -1,8 +1,8 @@
 ---
 name: openshift-runbook
-description: OpenShift で実現したいことを聞き、YAML・確認スクリプトにして実クラスタで検証し（切り戻し・クリーンアップ込み）、手順書 runbook.md を作る。
+description: OpenShiftに設定を適用する手順書を作り、接続中のクラスタで適用から切り戻しまで試して検証する。
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, WebFetch
-argument-hint: "[実現したいこと]"
+argument-hint: "[適用したい設定]"
 ---
 
 # openshift-runbook

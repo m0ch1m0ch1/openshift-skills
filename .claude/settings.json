@@ -1,4 +1,7 @@
 {
+  "env": {
+    "OMCCONFIG": "must-gather-analyses/.omc/omc.json"
+  },
   "permissions": {
     "allow": [
       "Bash(bash .claude/skills/openshift-runbook/scripts/runbook.sh cluster:*)",
@@ -15,7 +18,29 @@
       "Bash(oc explain:*)",
       "Bash(oc version:*)",
       "Bash(oc image info:*)",
-      "Bash(oc config current-context:*)"
+      "Bash(oc config current-context:*)",
+      "Bash(bash .claude/skills/openshift-must-gather-analysis/scripts/mg.sh:*)",
+      "Bash(omc get:*)",
+      "Bash(omc describe:*)",
+      "Bash(omc logs:*)",
+      "Bash(omc use:*)",
+      "Bash(omc events:*)",
+      "Bash(omc etcd:*)",
+      "Bash(omc prom:*)",
+      "Bash(omc certs:*)",
+      "Bash(omc version:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.redhat.com)",
+      "WebFetch(domain:access.redhat.com)",
+      "WebFetch(domain:issues.redhat.com)",
+      "WebFetch(domain:bugzilla.redhat.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:kubernetes.io)",
+      "Edit(runbooks/**)",
+      "Edit(must-gather-analyses/**)"
     ]
   }
 }
