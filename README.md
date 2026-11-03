@@ -4,10 +4,10 @@ OpenShift の作業を支援する Claude Code 用のスキル集です。
 
 ## スキル
 
-| スキル | 内容 |
-|---|---|
-| [openshift-runbook](.claude/skills/openshift-runbook/README.md) | OpenShift で設定や構築をしたいときに、検証済みの手順書を作る。公式ドキュメントをもとに成功条件・YAML・確認スクリプトを作り、承認を得て実クラスタで検証し（切り戻し・クリーンアップ込み）、手順書 runbook.md にまとめる |
-| [openshift-must-gather-analysis](.claude/skills/openshift-must-gather-analysis/README.md) | must-gather から、特定の事象の原因を調べる。確認事項と調査項目のチェックリストを作って omc で調べ、原因と対処案を、根拠（ファイルと行）と情報元付きの報告書にまとめる（クラスタには接続しない） |
+| スキル | 使う場面 | やること | できあがるもの |
+|---|---|---|---|
+| [openshift-runbook](.claude/skills/openshift-runbook/README.md) | 設定や構築をしたい | 公式ドキュメントをもとに YAML と確認スクリプトを作り、承認を得てから、接続中のクラスタで適用から切り戻しまで試す | 検証済みの手順書（`runbook.md`） |
+| [openshift-must-gather-analysis](.claude/skills/openshift-must-gather-analysis/README.md) | 起きた事象の原因を知りたい | must-gather を omc で調べ、事象から原因へさかのぼる。クラスタには接続しない | 原因と対処案の報告書（`report.md`。根拠のファイルと行、情報元付き） |
 
 各スキルの前提条件と使い方は、それぞれの README を参照してください。
 
