@@ -32,6 +32,7 @@ macOS または Linux で、このリポジトリをクローンし、ルート�
 ├── .claude/
 │   ├── settings.json         # 共有の設定（下を参照）
 │   └── skills/<skill-name>/  # 各スキル（SKILL.md と README.md など）
+├── .github/                  # CI（workflows/）、Issue と PR のテンプレート
 ├── .mcp.json                 # MCP サーバーの登録（下を参照）
 ├── CLAUDE.md                 # このリポジトリで作業するときの Claude Code への指示
 ├── sample/                   # スキルが作るものの例
