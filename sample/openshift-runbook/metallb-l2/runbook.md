@@ -15,8 +15,9 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 - コマンドは、この手順書があるディレクトリで実行する。
 
 ## パラメータ
+
 | 項目 | 値 | ファイル |
-|---|---|---|
+| --- | --- | --- |
 | IP アドレスプール | 192.0.2.150-192.0.2.180 | manifests/03-l2.yaml |
 | 動作確認用 Namespace | metallb-test | manifests/04-test-app.yaml |
 
@@ -140,11 +141,11 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
       metallb.metallb.io/metallb created
       ```
 
-   > **注記**
-   >
-   > speaker の Pod の数は、クラスタのノード数と同じになります。シングルノードの場合は 1 つです。
-
    3. controller と speaker の Pod が Running になっていることを確認します。
+
+      > **注記**
+      >
+      > speaker の Pod の数は、クラスタのノード数と同じになります。シングルノードの場合は 1 つです。
 
       1. 次のコマンドを実行して、controller と speaker の Pod が Ready になるまで待機します。
 

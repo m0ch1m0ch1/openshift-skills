@@ -194,7 +194,7 @@ cmd_list() {
   while IFS= read -r f; do echo "[WARN] ケースに入っていない must-gather: ${f#$DIR/} (mg.sh new で、新しいケースに移す)"; done < <(loose)
   ls -d "$DIR"/*/must-gather >/dev/null 2>&1 || { echo "$DIR/ にケースはありません"; return 0; }
   echo "| ケース | must-gather | 取得日時 | バージョン | 報告書 |"
-  echo "|---|---|---|---|---|"
+  echo "| --- | --- | --- | --- | --- |"
   for c in "$DIR"/*/must-gather; do
     c="$(basename "$(dirname "$c")")"
     r="$(root "$c")"
@@ -550,7 +550,7 @@ cmd_ns() {
   need_root
   if [ -z "$ns" ]; then
     echo "| Namespace | Pod | ログのあるコンテナ |"
-    echo "|---|---|---|"
+    echo "| --- | --- | --- |"
     for d in "$R"/namespaces/*/; do
       n="$(basename "$d")"
       case "$n" in openshift|openshift-*|kube-*|default) continue;; esac
@@ -654,20 +654,24 @@ quotes() {
     s = $0
     while (match(s, /`[^` ]+\/[^` ]+:[0-9]+(-[0-9]+)?`/)) {
       ref = substr(s, RSTART + 1, RLENGTH - 2); s = substr(s, RSTART + RLENGTH)
+      if (index(ref, "://")) continue   # URL の引用 (refs と同じく、パスとして扱わない)
       t = s; sub(/^ */, "", t)
       if (index(t, "「") != 1) continue
       t = substr(t, length("「") + 1); e = index(t, "」"); if (!e) continue
       p = ref; sub(/:[0-9]+(-[0-9]+)?$/, "", p)
       r = substr(ref, length(p) + 2); a = r; b = ""
       if (index(r, "-")) { a = substr(r, 1, index(r, "-") - 1); b = substr(r, index(r, "-") + 1) }
-      print p us a us b us substr(t, 1, e - 1)
+      # 「`…`」 (URL や * _ を含む行を、Markdown として解釈させないためのコード表記) は、` を除いて比べる
+      q = substr(t, 1, e - 1); if (length(q) >= 2 && substr(q, 1, 1) == "`" && substr(q, length(q)) == "`") q = substr(q, 2, length(q) - 2)
+      print p us a us b us q
     }
   }'
 }
 # evidence <report>: 根拠を書く節 (確認した事実、原因)。ほかの節のコマンドを根拠と取り違えないよう、この 2 つだけを見る
 evidence() { section "$1" 確認した事実; section "$1" 原因; }
 # refs: 標準入力から、根拠の参照 (`パス:行` または `パス:行-行`) を "パス 行 行" で出す
-refs() { grep -oE '`[^` ]+/[^` ]+:[0-9]+(-[0-9]+)?`' | tr -d '`' | sed -E 's/:([0-9]+)(-([0-9]+))?$/ \1 \3/'; }
+#   URL (「`https://<host>:443`」のような引用) は、パスと取り違えないよう除く
+refs() { grep -oE '`[^` ]+/[^` ]+:[0-9]+(-[0-9]+)?`' | grep -vF '://' | tr -d '`' | sed -E 's/:([0-9]+)(-([0-9]+))?$/ \1 \3/'; }
 
 cmd_lint() {
   local f="$DIR/$SLUG/report.md" cl="$DIR/$SLUG/checklist.md" fail=0 s p a b total n

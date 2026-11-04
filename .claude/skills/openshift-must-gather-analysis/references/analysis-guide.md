@@ -6,7 +6,7 @@
 
 起点から「なぜそうなったか」を 1 段ずつさかのぼる。各段に must-gather の根拠を 1 つ以上付け、根拠が無い段は推定として確度（高・中・低）を付ける。
 
-```
+```text
 <起点>（例: Pod が Error で終了した、ClusterOperator が Degraded）
 → なぜ: <直接の理由>（終了メッセージ、ログの最後のエラー、条件の message）
 → なぜ: <その理由が起きた条件>（同じ時刻のほかのコンポーネントのログ、イベント、ノードのログ）
@@ -22,7 +22,7 @@
 
 事象を聞いたら、確認事項のファイル（`checklist.md`。`mg.sh plan` で作る）に、まず「この調査で答えること」を確認事項として番号付きで並べ、確認事項ごとに、答えるために調べることを調査項目として並べる。調査中は調査項目をチェックし、最後に報告書（`report.md`）で確認事項ごとに答える。`checklist.md` の節は「事象」「確認事項」「調査項目」で、報告書の「事象」と「確認事項」は `mg.sh report` が `checklist.md` から写す。事象や確認事項は `checklist.md` だけを直し、`mg.sh report` を実行して報告書に写し直す（報告書の側は直接直さない）。
 
-```
+```markdown
 ## 確認事項
 
 1. <事象> の原因
@@ -61,7 +61,7 @@
 状態 → 詳細 → ログの順に狭め、各段で次の段の手がかりを 1 つ見つける。
 
 | 見たいもの | コマンド |
-|---|---|
+| --- | --- |
 | 異常の概要、最近のアップデート | `mg.sh overview <case>` |
 | Namespace に何が含まれているか（Pod とログの有無） | `mg.sh ns <case> [<ns>]` |
 | ClusterOperator・ノード・MCP などの条件（理由と message） | `mg.sh cond <case> cluster-scoped-resources/config.openshift.io/clusteroperators/<name>.yaml` |
@@ -76,7 +76,7 @@
 主なファイル:
 
 | もの | ファイル |
-|---|---|
+| --- | --- |
 | ClusterOperator | `cluster-scoped-resources/config.openshift.io/clusteroperators/<name>.yaml` |
 | アップデートの履歴 | `cluster-scoped-resources/config.openshift.io/clusterversions/version.yaml`（`history`） |
 | static Pod の revision | `cluster-scoped-resources/operator.openshift.io/<kubeapiservers など>/cluster.yaml`（`nodeStatuses`） |
@@ -95,14 +95,14 @@ CLAUDE.md の「コマンドの実行」に従ったうえで、次を守る。
 
 ## ログの読み方
 
-- エラーは klog 形式の `(^| )[EF][0-9]{4} ` で探す（`E1103` がエラー、`F1103` が致命的エラー）。`error|failed` では取りこぼす。`mg.sh` の regex は、どのサブコマンドでも `grep -E` の書き方で解釈される。
+- エラーは klog 形式の `(^| )[EF][0-9]{4}[ ]` で探す（`E1103` がエラー、`F1103` が致命的エラー）。`error|failed` では取りこぼす。`mg.sh` の regex は、どのサブコマンドでも `grep -E` の書き方で解釈される。
 - `mg.sh logs` / `pod` / `errors` / `count` が出すログの期間に、調べたい時刻が入っていなければ、そのログでは確かめられない（「該当なし」でも、事象が無かったことにはならない）。
 - Pod のログは、再起動前のものが `previous.log` に 1 世代だけ残る。ノードの再起動やアップデートの後や、イベントが消えた後は、ノードのサービスログ（kubelet）を見る。期間が長く残っていることが多い。
 
 kubelet のログで Pod の動きを追う語:
 
 | 語 | 意味 |
-|---|---|
+| --- | --- |
 | `"SyncLoop ADD" source="api"` / `"SyncLoop DELETE"` | Pod が作られた / 削除された |
 | `"SyncLoop REMOVE" source="file"` | static Pod（etcd、kube-apiserver など）のマニフェストが置き換えられ、古い Pod が止められた |
 | `Killing container with a grace period` | コンテナを止めた |
@@ -121,7 +121,7 @@ kubelet のログの行は `Mon DD HH:MM:SS` で始まるので、regex の先�
 OpenShift では、コントローラー（Operator、CSI Driver、kubelet など）が、実際の状態を望む状態（spec や設定）に合わせ続ける。事象の多くは、この合わせ込みが止まったか、ずれたまま残ったもの。次の順にたどる。
 
 | 順 | 見ること | 見る場所の例 |
-|---|---|---|
+| --- | --- | --- |
 | 1 | 望む状態（何をするはずだったか） | spec、設定のリソース（StorageClass、MachineConfig、Operator の設定のリソース） |
 | 2 | 実際の状態（どこまで進んだか） | `status.conditions`、`phase`、Operator が書く進み具合（`nodeStatuses` など） |
 | 3 | 担当のコントローラー（誰が合わせるか） | StorageClass の `provisioner`、`ownerReferences`、`managedFields` の `manager`。名前から推測しない |
@@ -141,7 +141,7 @@ OpenShift では、コントローラー（Operator、CSI Driver、kubelet な�
 ### 種類ごとの要点
 
 | 種類 | 見ること |
-|---|---|
+| --- | --- |
 | static Pod（etcd、kube-apiserver、kube-controller-manager、kube-scheduler） | Operator のリソース（`cluster-scoped-resources/operator.openshift.io/<kubeapiservers など>/cluster.yaml`）の `latestAvailableRevision` と `nodeStatuses`（`currentRevision`、`targetRevision`、`lastFailedRevision`、`lastFailedReason`）。`installer-<N>-<ノード>` Pod の終了の理由。revision を作った契機は、ConfigMap `revision-status-<N>` の `reason`。`lastFailedRevision` が残っていれば、古い revision の ConfigMap や Secret が消されずに残っていないか（revision-pruner への影響はナレッジベースで確かめる） |
 | Operator（OLM） | Subscription、InstallPlan、ClusterServiceVersion の `phase` と conditions |
 | ノード、MachineConfig | MachineConfigPool の conditions。ノードの annotation `machineconfiguration.openshift.io/state`、`currentConfig`、`desiredConfig`、`reason` |
@@ -172,7 +172,7 @@ OpenShift では、コントローラー（Operator、CSI Driver、kubelet な�
 概要だけを読めば結論と次の行動が分かり、詳細を読めば根拠をたどれるように書く。同じことは 1 か所にだけ書き、ほかの節からは番号（事実 N、情報元 N）で示す。
 
 | 節 | 書くこと |
-|---|---|
+| --- | --- |
 | 概要 | 事象・原因（確度）・影響・推奨する対処を 1〜2 文ずつ |
 | 事象、確認事項 | `mg.sh report` が `checklist.md` から写す（直すときは `checklist.md` を直して写し直す） |
 | 時系列 | 事象の前後の出来事を時刻の順に表にし、根拠は事実の番号で示す |
@@ -180,13 +180,15 @@ OpenShift では、コントローラー（Operator、CSI Driver、kubelet な�
 | 原因 | 原因を問う確認事項への回答として、「なぜ」の連なりと各段の事実の番号。確度とその理由 |
 | 対処案 | 確認事項ごとの回答として、推奨する順に、コマンド・影響・切り戻し・情報元の番号 |
 | 未確認事項 | 何が / なぜ確認できないか / 確かめるコマンドと、その結果で何が分かるか |
-| 情報元 | 番号付きで、題名・URL・確かめた内容（引用）・この事象との一致と違い |
+| 情報元 | 番号付きで、題名・URL（`<https://…>` の形）・確かめた内容（引用）・この事象との一致と違い |
 
-- 根拠は `パス:行` と、その行の要点の引用で書く（長い行は「…」で省略してよい）。行番号は `mg.sh` の出力で確かめた値だけを使う。
-  ```
+- 根拠は `パス:行` と、その行の要点の引用で書く（長い行は「…」で省略してよい）。行番号は `mg.sh` の出力で確かめた値だけを使う。URL や `*`・`_` を含む行は、Markdown として解釈されないよう、引用の中身を `` ` `` で囲む（「`…`」。lint は `` ` `` を除いて比べる）。
+
+  ```markdown
   1. <事実を 1〜2 文で>。
      - 根拠: `namespaces/<ns>/pods/<pod>/<c>/<c>/logs/current.log:120-122` 「<その行の要点>…<続きの要点>」
   ```
+
 - 集計で分かることは、使ったコマンドを書き、代表的な行を根拠に添える。
 - 確かめるコマンドは、ユーザーがそのまま実行できる形で書く（例: `oc logs -n <ns> <pod> -c <container> --since=1h`、`oc adm inspect ns/<ns>`、製品の must-gather があれば `oc adm must-gather --image=<製品の must-gather イメージ>`）。名前は must-gather で分かっていれば実際の名前を入れる。コマンドが分からないもの（OpenShift 本体以外の製品の操作など）は、誰に何を確かめるかを書く。
 - 時刻は UTC にそろえる（ノードのサービスログが UTC でなければ換算する）。ユーザーが日本時間で話していれば、事象の節に日本時間も添える。

@@ -2,7 +2,7 @@
 
 ファイルの中身は、そのまま手順書 runbook.md に載る。形式の誤り（ファイル名、`set -euo pipefail`、namespace、タグの固定、Secret、`oc wait` の timeout など）は lint が検出するので、ここでは lint で判定できないことだけを書く。
 
-```
+```text
 runbooks/<name>/
 ├── spec.md                  # 仕様（タイトル・概要・成功条件・前提条件など）。ひな形の TODO を埋める
 ├── manifests/               # YAML だけを置く（ここだけを参照・適用に使える）
@@ -23,6 +23,7 @@ runbooks/<name>/
 手順の仕様。runbook.md の冒頭（タイトル・概要・前提条件・パラメータ）と「成功条件 (DoD)」「関連情報」の節になる。
 
 Red Hat 公式ドキュメントの手順モジュールに合わせる。
+
 - タイトルは「〜の作成」「〜のインストール」のような名詞の形。続けて、何をするか・なぜするか（効果）を「〜します」で 1〜2 文書く。
 - `## 成功条件 (DoD)` は `- [ ] 状態（確認: NN-name）` のチェックリストで、完了したときに観測できる状態を書く。`NN-name` のステップの check.sh がその状態を確かめる。チェックは付けない（`run` で確認できた項目に、検証結果と手順書で [x] が付く）。
 - `## 前提条件` の各項目は、満たしている状態を「〜がある。」「〜できる。」で書く。
@@ -58,7 +59,7 @@ Red Hat 公式ドキュメントの手順モジュールに合わせる。
 期待する状態になったかを確かめる（適用したかどうかではない）。公式ドキュメントの Verification を元に、「待つ」ブロックと「状態を表示する」ブロックに分ける。
 
 | 対象 | 待つ | 状態を表示する |
-|---|---|---|
+| --- | --- | --- |
 | Pod | `oc wait pod -l <ラベル> -n <ns> --for=create --timeout=…` の後に `--for=condition=Ready` | `oc get pods -l <ラベル> -n <ns> -o wide`、`oc logs deployment/<名前> -n <ns> --tail=5` |
 | Operator | `oc wait subscription/<名前> -n <ns> --for=jsonpath='{.status.state}'=AtLatestKnown --timeout=…` と CSV の Succeeded | `oc get csv -n <ns> -o custom-columns=NAME:.metadata.name,PHASE:.status.phase`、`oc get pods -n <ns>` |
 | Service / Route | `--for=jsonpath=…` で外部 IP などを待つ | `oc get service` / `oc get route` と `curl` の応答 |

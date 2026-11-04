@@ -437,10 +437,10 @@ cmd_run() {
     echo
     echo "- 結果: **${result}**（切り戻し ${rb} / クリーンアップ ${cl}）"
     echo "- 日時: $(date '+%Y-%m-%d %H:%M')"
-    echo "- 接続先: $(cut -d' ' -f1 run/server)（プロジェクト $(cut -d' ' -f2 run/server)、OpenShift $(version)、$(oc whoami)）"
+    echo "- 接続先: \`$(cut -d' ' -f1 run/server)\`（プロジェクト $(cut -d' ' -f2 run/server)、OpenShift $(version)、$(oc whoami)）"
     echo
     echo "| ステップ | 作業 | 結果 | 秒 |"
-    echo "|---|---|---|---|"
+    echo "| --- | --- | --- | --- |"
     printf '%s' "$rows"
     echo
     echo "## 成功条件 (DoD)"
@@ -449,7 +449,7 @@ cmd_run() {
       echo "$b|$d|$(printf '%s' "$rows" | awk -F' *[|] *' -v b="$b" '$2 == b {print $4}')"
     done | checklist step
     for n in $failed $([ $rb = NG ] && echo rollback) $([ $cl = NG ] && echo cleanup); do
-      printf '\n## NG: %s（末尾 60 行）\n\n```\n' "$n"; tail -60 "run/logs/$n.log"; echo '```'
+      printf '\n## NG: %s（末尾 60 行）\n\n```text\n' "$n"; tail -60 "run/logs/$n.log"; echo '```'
     done
     echo; echo "全ログ: run/logs/"
   } > run/result.md
@@ -556,10 +556,11 @@ spec_section() {
 }
 # spec_other: 前提条件・関連情報 以外の spec.md の節 (パラメータなど) をそのまま出す
 spec_other() { awk '/^## / {f = ($0 != "## 前提条件" && $0 != "## 成功条件 (DoD)" && $0 != "## 関連情報")} f' spec.md; }
-# script_step <ファイル> <タグ> <インデント> <ログ> <項目 (ブロックが 1 つ)> <項目 (ブロックが複数)>
+# script_step <ファイル> <タグ> <インデント> <ログ> <項目 (ブロックが 1 つ)> <項目 (ブロックが複数)> [<注記のファイル>]
 #   ブロックが 1 つなら、項目の下にコマンドと出力例を出す。
 #   複数なら、ブロックごとに「次のコマンドを実行して、<説明>。」のサブステップにして、コマンドと出力例を出す
 #   (<項目 (ブロックが複数)> が空なら、親の項目を作らず、ブロックを <インデント> の番号付き手順にする)
+#   <注記のファイル> があれば、その注記を項目の本文として出す (項目の前に出すと、番号付きリストが途中で切れる)
 script_step() {
   local f=$1 tag=$2 c="$3   " log=$4 k n=0 m=0 d   # 項目の本文はリスト記号の分だけ下げる
   for ((k = 1; k <= $(blocks "$f"); k++)); do [ -n "$(block_part "$f" $k code)" ] && n=$((n + 1)); done
@@ -568,6 +569,7 @@ script_step() {
     d=""; for ((k = 1; k <= $(blocks "$f"); k++)); do [ -n "$(block_part "$f" $k code)" ] && d="$(block_part "$f" $k desc | head -1 | sed 's/。$//' | polite)"; done
     if [ -n "$d" ] && [[ $5 == *"次のコマンドを実行します。" ]]; then echo; echo "$3${5%次のコマンドを実行します。}次のコマンドを実行して、${d}。"
     else echo; echo "$3$5"; fi
+    [ -z "${7:-}" ] || notes "$7" "$c"
     for ((k = 1; k <= $(blocks "$f"); k++)); do
       [ -n "$(block_part "$f" $k code)" ] || continue
       echo; block_part "$f" $k code | prompt | block terminal "$c"
@@ -575,7 +577,7 @@ script_step() {
     done
     return
   fi
-  if [ -n "$6" ]; then echo; echo "$3$6"; else c="$3"; fi
+  if [ -n "$6" ]; then echo; echo "$3$6"; [ -z "${7:-}" ] || notes "$7" "$c"; else c="$3"; fi
   for ((k = 1; k <= $(blocks "$f"); k++)); do
     [ -n "$(block_part "$f" $k code)" ] || continue
     m=$((m + 1)); d="$(block_part "$f" $k desc | head -1 | sed 's/。$//' | polite)"
@@ -633,9 +635,8 @@ cmd_doc() {
       fi
       # 最後のステップの確認は「検証」に載せる
       [ "$b" = "$last" ] && continue
-      notes "$(chk "$b")" "$I"
       script_step "$(chk "$b")" check "$I" "$log" \
-        "$j. 次のコマンドを実行して、$(title "$(chk "$b")")ことを確認します。" "$j. $(title "$(chk "$b")")ことを確認します。"
+        "$j. 次のコマンドを実行して、$(title "$(chk "$b")")ことを確認します。" "$j. $(title "$(chk "$b")")ことを確認します。" "$(chk "$b")"
     done
     echo
     echo "## 検証"

@@ -29,7 +29,7 @@
 ## 時系列
 
 | 時刻 | 出来事 | 事実 |
-|---|---|---|
+| --- | --- | --- |
 | 2026-11-02 08:13:51 | 4.22.20 へのアップデートが始まる | 事実 1 |
 | 08:14:39 | kube-apiserver の revision 10 が作られる（kube-apiserver-pod が変わった） | 事実 2 |
 | 08:14:45 | etcd の installer-2 が動き始める | 事実 3 |
@@ -59,9 +59,9 @@
    - 根拠: `host_service_logs/masters/kubelet_service.log:95029` 「Nov 02 08:18:52 … "SyncLoop (probe)" probe="readiness" status="ready" pod="openshift-etcd/etcd-<ノード名>"」
 5. installer-10 の installer コンテナは 08:15:12 に起動し、08:15:56 に exit code 1 で終了した。最後の行は、kube-apiserver（`172.30.0.1:443`）へ installer Pod の一覧を取りに行った要求のタイムアウトによる致命的エラー（`F`）だった。
    - 根拠: `namespaces/openshift-kube-apiserver/pods/installer-10-<ノード名>/installer-10-<ノード名>.yaml:396-397` 「exitCode: 1」「finishedAt: "2026-11-02T08:15:56Z"」、同 `:427` 「startedAt: "2026-11-02T08:15:12Z"」
-   - 根拠: `namespaces/openshift-kube-apiserver/pods/installer-10-<ノード名>/installer-10-<ノード名>.yaml:424-425` 「I1102 08:15:42.852746 … Getting installer pods for node …」「F1102 08:15:56.856324 … Get "https://172.30.0.1:443/api/v1/namespaces/openshift-kube-apiserver/pods?labelSelector=app%3Dinstaller": net/http: request canceled (Client.Timeout exceeded while awaiting headers)」
+   - 根拠: `namespaces/openshift-kube-apiserver/pods/installer-10-<ノード名>/installer-10-<ノード名>.yaml:424-425` 「I1102 08:15:42.852746 … Getting installer pods for node …」「`F1102 08:15:56.856324 … Get "https://172.30.0.1:443/api/v1/namespaces/openshift-kube-apiserver/pods?labelSelector=app%3Dinstaller": net/http: request canceled (Client.Timeout exceeded while awaiting headers)`」
 6. 同じ時間帯に、kubelet から API への要求も失敗していた。`mg.sh count '<Nov 02 08:1.*(Client.Timeout|request did not complete within requested timeout|connect: connection refused)>' host_service_logs/masters/kubelet_service.log minute` で数えると、08:15 から 08:19 まで毎分 5〜25 件あった。
-   - 根拠: `host_service_logs/masters/kubelet_service.log:94613` 「E1102 08:15:38.769821 … "Failed to update lease" err="Put \"https://api-int.…:6443/apis/coordination.k8s.io/v1/…」
+   - 根拠: `host_service_logs/masters/kubelet_service.log:94613` 「`E1102 08:15:38.769821 … "Failed to update lease" err="Put \"https://api-int.…:6443/apis/coordination.k8s.io/v1/…`」
    - 根拠: `host_service_logs/masters/kubelet_service.log:94690` 「E1102 08:15:50.500001 … "Server rejected event (will not retry!)" err="Timeout: request did not complete within requested timeout - context deadline exceed…」
 7. kube-apiserver-operator は、revision 10 を installer の失敗（InstallerFailed）として 08:19:52 に記録した。取得時点では、ノードは revision 11（最新）で動いている。
    - 根拠: `cluster-scoped-resources/operator.openshift.io/kubeapiservers/cluster.yaml:1066-1071` 「latestAvailableRevision: 11」「currentRevision: 11」「lastFailedCount: 1」「lastFailedReason: InstallerFailed」「lastFailedRevision: 10」
@@ -72,14 +72,14 @@
 9. 取得時点で、ClusterOperator kube-apiserver は Degraded=False で、Progressing=False（2026-11-02 08:23:17 から）だった。message は「NodeInstallerProgressing: 1 node is at revision 11」。
    - 根拠: `cluster-scoped-resources/config.openshift.io/clusteroperators/kube-apiserver.yaml:98-106` 「message: 'NodeControllerDegraded: All master nodes are ready'」…「type: Degraded」「lastTransitionTime: "2026-11-02T08:23:17Z"」「message: 'NodeInstallerProgressing: 1 node is at revision 11'」…「type: Progressing」
 10. 取得時点で、`openshift-kube-apiserver` には revision 6〜11 の ConfigMap `revision-status-<N>` が残っている（1〜5 は無い）。ノードの記録には `lastFailedRevision: 10` が残っている（事実 7）。
-   - 根拠: `namespaces/openshift-kube-apiserver/core/configmaps.yaml:4664` 「name: revision-status-10」、同 `:4697` 「name: revision-status-11」、同 `:4730` 「name: revision-status-6」、同 `:4829` 「name: revision-status-9」（`mg.sh grep '^    name: revision-status-[0-9]+$'` の結果は 6〜11 の 6 件）
-   - revision-pruner Pod も、revision 6〜11 の分が作られている（`mg.sh grep 'revision-pruner-[0-9]+-' namespaces/openshift-kube-apiserver/pods` の結果）。
+    - 根拠: `namespaces/openshift-kube-apiserver/core/configmaps.yaml:4664` 「name: revision-status-10」、同 `:4697` 「name: revision-status-11」、同 `:4730` 「name: revision-status-6」、同 `:4829` 「name: revision-status-9」（`mg.sh grep '^    name: revision-status-[0-9]+$'` の結果は 6〜11 の 6 件）
+    - revision-pruner Pod も、revision 6〜11 の分が作られている（`mg.sh grep 'revision-pruner-[0-9]+-' namespaces/openshift-kube-apiserver/pods` の結果）。
 
 ## 原因
 
 確認事項 1 への回答:
 
-```
+```text
 installer-10 Pod が Error で終了した（2026-11-02 08:15:56）（事実 5）
 → なぜ: installer が kube-apiserver（172.30.0.1:443）に installer Pod の一覧を取りに行き、応答が無いままタイムアウトした（事実 5）
 → なぜ: 08:15 から 08:19 の間、kube-apiserver が応答していなかった。kubelet の API 要求も同じ時間帯にタイムアウトしている（事実 6）
@@ -104,9 +104,11 @@ installer-10 Pod が Error で終了した（2026-11-02 08:15:56）（事実 5�
    - 内容: revision-pruner は、`lastFailedRevision` から 5 を引いた revision より後を残し続ける（情報元 3）。取得時点で残っているのは revision 6〜11 の 6 件で（事実 10）、今後 revision が増えると、残る数も増える。情報元 3 の手順では、失敗の記録（`lastFailedCount`、`lastFailedReason`、`lastFailedRevision`、`lastFailedRevisionErrors`、`lastFailedTime`）を status から消すと、次の revision-pruner の実行で古い revision が消される。
    - 手順の前の確認（対象を誤らないため）: `oc get kubeapiserver cluster -o jsonpath='{range .status.nodeStatuses[*]}{.nodeName}{" "}{.currentRevision}{" "}{.lastFailedRevision}{"\n"}{end}'` で、ノードが 1 つだけであること（SNO なので、配列の位置は 0）と、`currentRevision` が `lastFailedRevision` より大きいことを確かめる。
    - コマンド（情報元 3 の手順を、位置 0 で書いたもの。記事の本文は空白が抜けて取得されたため、空白を補っている）:
-     ```
+
+     ```shell
      oc patch kubeapiserver cluster --subresource=status --type=json -p='[{"op":"remove","path":"/status/nodeStatuses/0/lastFailedCount"},{"op":"remove","path":"/status/nodeStatuses/0/lastFailedReason"},{"op":"remove","path":"/status/nodeStatuses/0/lastFailedRevision"},{"op":"remove","path":"/status/nodeStatuses/0/lastFailedRevisionErrors"},{"op":"remove","path":"/status/nodeStatuses/0/lastFailedTime"}]'
      ```
+
    - 影響: status の記録だけを消す。kube-apiserver は入れ替わらない。情報元 3 には、すぐに消すために kube-apiserver の入れ替え（`forceRedeploymentReason`）を起こす手順もあるが、SNO では API が止まるため勧めない（次の revision-pruner の実行を待つ）。
    - 切り戻し: 消した記録は戻せない（失敗の内容は、この報告書の事実 5、事実 7 に残っている）。
 
@@ -119,22 +121,22 @@ installer-10 Pod が Error で終了した（2026-11-02 08:15:56）（事実 5�
 ## 情報元
 
 1. Bug 1950019 - installer pod in openshift-kube-controller-manager (or openshift-kube-apiserver) namespace is in error state upon deployment
-   - URL: https://bugzilla.redhat.com/show_bug.cgi?id=1950019
+   - URL: <https://bugzilla.redhat.com/show_bug.cgi?id=1950019>
    - 確かめた内容: SNO（4.8）で、installer Pod が API サーバーからリソースを取りに行って失敗し、Error になる。ログは「dial tcp [fd02::1]:443: connect: connection refused」。後続の installer（retry）は成功し、kube-apiserver は Running になる。「The issue is probably intermittent - doesn't always reproduce.」とされ、WONTFIX で閉じられている。
    - 一致する点: SNO で、kube-apiserver の installer Pod が API に接続できずに Error になり、後続の installer で回復している。
    - 違う点: インストール時の事例で、今回はアップデート中。エラーは `connection refused` で、今回は `Client.Timeout exceeded`（API が応答しなかった）。バージョンが 4.8。
 2. OpenShift Container Platform 4.22 Updating clusters「3.1.1. About updating single node OpenShift Container Platform」
-   - URL: https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/updating_clusters/performing-a-cluster-update
+   - URL: <https://docs.redhat.com/en/documentation/openshift_container_platform/4.22/html/updating_clusters/performing-a-cluster-update>
    - 確かめた内容: 「Updating a single-node OpenShift Container Platform cluster requires downtime and can include an automatic reboot.」「If the update payload does not contain an operating system update or machine configuration changes, a short API outage occurs」
    - 一致する点: クラスタは SNO で、4.22 のアップデートの途中に API が応答しない時間があった（事実 6）。
    - 違う点: ドキュメントは、installer Pod が失敗して残ることには触れていない。
 3. Red Hat ナレッジベース Solution 7105585「Old configmap and secret revisions in "openshift-kube-*" namespaces are not deleted by the revision pruner」
-   - URL: https://access.redhat.com/solutions/7105585
+   - URL: <https://access.redhat.com/solutions/7105585>
    - 確かめた内容（ナレッジベースの MCP の `get_kcs` で取得）: 根本原因は「The revision-pruner pods works as expected as the pruner will keep `lastFailedRevision - 5` revisions.」（取得した本文の途中の改行は詰めた）。解決策は、失敗した revision の記録がもう関係ないこと（すべてのノードが、より新しい revision にあること）を確かめてから、`kubeapiservers` などの status の `lastFailed` の項目を消す。
    - 一致する点: このクラスタでも、ノードに `lastFailedRevision: 10` が残っていて、すべてのノード（1 台）が、より新しい revision 11 にある（事実 7）。
    - 違う点: 記事の事象（期限切れの証明書を持つ古い `serving-cert-*` の Secret が残る）は、このクラスタでは確かめていない。
 4. Red Hat ナレッジベース Solution 7114336「The revision-pruner pods are not created when the lastFailedRevision of any node is less than 6」
-   - URL: https://access.redhat.com/solutions/7114336
+   - URL: <https://access.redhat.com/solutions/7114336>
    - 確かめた内容（`get_kcs` で取得）: `lastFailedRevision` が 6 より小さいと revision-pruner Pod が作られない。6 より大きいときは Solution 7105585 を見る、とある。
    - 一致する点: `lastFailedRevision` の記録が revision-pruner に影響する点。
    - 違う点: このクラスタは `lastFailedRevision: 10` で、この記事の条件（6 より小さい）には当たらない。revision-pruner Pod は作られている（事実 10）。
