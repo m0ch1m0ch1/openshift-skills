@@ -222,20 +222,20 @@ cmd_run() {
 
 # test: MCP の手順 (initialize → initialized → tools/call) で search_kcs を 1 回呼び、結果を確かめる
 cmd_test() {
-  local out res done i
+  local out res mark
   built || die "rhkcs-mcp が、固定したコミット (${PIN:0:7}) でビルドされていません (次: $T build)"
   token_ok || die "token がありません (次: 別のターミナルで $T token)"
   echo "MCP サーバーを起動し、search_kcs で検索します (最大 20 秒)"
   own_dir "$S"
-  done="$S/.test-done"; rm -f "$done"
+  mark="$S/.test-done"; rm -f "$mark"
   # 入力を閉じるとサーバーが終わるため、応答が来るまで (最大 20 秒) は入力を開けておく。応答が来たら awk が印のファイルを作る
   out="$( {
     printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"rhkcs-test","version":"1"}}}'
     printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
     printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"search_kcs","arguments":{"query":"etcd","rows":1}}}'
-    for i in $(seq 1 40); do [ -e "$done" ] && break; sleep 0.5; done
-  } | bash "$TOP/$SCRIPT" run 2>&1 | awk -v d="$done" '{ print } /"id":2[,}]/ { printf "" > d; close(d); exit }' )"
-  rm -f "$done"
+    for _ in $(seq 1 40); do [ -e "$mark" ] && break; sleep 0.5; done
+  } | bash "$TOP/$SCRIPT" run 2>&1 | awk -v d="$mark" '{ print } /"id":2[,}]/ { printf "" > d; close(d); exit }' )"
+  rm -f "$mark"
   res="$(printf '%s\n' "$out" | grep -E '"id":2[,}]' | head -1)"
   if [ -z "$res" ]; then
     echo "[NG] search_kcs の応答がありません"
