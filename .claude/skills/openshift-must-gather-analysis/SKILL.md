@@ -1,7 +1,7 @@
 ---
 name: openshift-must-gather-analysis
 description: OpenShiftのmust-gatherから事象の原因を調べ、対処案とあわせて報告書にまとめる。
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, WebFetch, WebSearch
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, WebFetch, WebSearch, ToolSearch, mcp__rhkcs__search_kcs, mcp__rhkcs__get_kcs
 argument-hint: "[must-gatherで調べたい事象]"
 ---
 
@@ -13,8 +13,9 @@ argument-hint: "[must-gatherで調べたい事象]"
 
 番号の順に進める。ユーザーに聞くのは、各段に書いたことだけにする。
 
-## 1. omc の確認
-`mg.sh check` を実行する。`[NG]` なら「omc が無いので入れてほしい」と伝え、`案内:` の GitHub の URL を示して終える。
+## 1. omc と MCP の確認
+1. `mg.sh check` を実行する。`[NG]` なら「omc が無いので入れてほしい」と伝え、`案内:` の GitHub の URL を示して終える。
+2. Red Hat ナレッジベースの MCP（`mcp__rhkcs__search_kcs` と `mcp__rhkcs__get_kcs`）が使えるかを確かめる。ツールの一覧に無ければ ToolSearch で `rhkcs` を探す（Claude Code が、rhkcs は無効・使えないと知らせていれば、探さずに使えないとする）。使えれば 7 で使う。使えなければ「`/rhkcs-mcp-setup` で導入すると、ログインが必要な記事も読める」と 1 行伝え、使わずに進める（聞かない）。
 
 ## 2. must-gather の準備
 1. `mg.sh new` を実行し、表示された置き場所に must-gather を置くよう案内する。ユーザーがケースの番号などを示していれば `mg.sh new <case>`。引数に事象があれば控えておき、ここでは事象を聞かない。
@@ -45,7 +46,7 @@ argument-hint: "[must-gatherで調べたい事象]"
 時系列の表（時刻・出来事・根拠）と「なぜ」の連なりで道筋を示し、原因（複数なら確度の順）と影響を添える。原因の見立てがユーザーの観測（直前の変更、時刻）と合っているかと、事象に気づいたきっかけ・ほかに困っていることを聞く。新しい情報は `checklist.md` の「事象」に書き、`mg.sh report <case>` で写し直す。合わない点や新しい情報があれば 5 に戻る。
 
 ## 7. 対処案
-ガイドの「対処案と情報元」に従い、WebSearch / WebFetch で情報元を調べ、確認事項ごとの回答と対処案を整理する。見つかった情報元は 1 文ずつ伝えながら進める。
+ガイドの「対処案と情報元」に従い、WebSearch / WebFetch（1 で MCP が使えれば、ナレッジベースはその MCP）で情報元を調べ、確認事項ごとの回答と対処案を整理する。見つかった情報元は 1 文ずつ伝えながら進める。情報元から、まだ調べていない原因や影響が分かったら、調査項目に足し、5 に戻って must-gather で確かめる。
 
 ## 8. 報告書
 ガイドの「報告書」に従って、残りの節（概要、時系列、原因、対処案、情報元）を書き、書き足してきた節を見直す。`mg.sh lint <case>` を、`[NG]` と `[WARN]` が無くなるまで直す。lint で確かめられないことは、ガイドの「報告書」に従って見直す。

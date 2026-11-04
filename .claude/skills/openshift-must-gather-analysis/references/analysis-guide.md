@@ -142,7 +142,7 @@ OpenShift では、コントローラー（Operator、CSI Driver、kubelet な�
 
 | 種類 | 見ること |
 |---|---|
-| static Pod（etcd、kube-apiserver、kube-controller-manager、kube-scheduler） | Operator のリソース（`cluster-scoped-resources/operator.openshift.io/<kubeapiservers など>/cluster.yaml`）の `latestAvailableRevision` と `nodeStatuses`（`currentRevision`、`targetRevision`、`lastFailedRevision`、`lastFailedReason`）。`installer-<N>-<ノード>` Pod の終了の理由。revision を作った契機は、ConfigMap `revision-status-<N>` の `reason` |
+| static Pod（etcd、kube-apiserver、kube-controller-manager、kube-scheduler） | Operator のリソース（`cluster-scoped-resources/operator.openshift.io/<kubeapiservers など>/cluster.yaml`）の `latestAvailableRevision` と `nodeStatuses`（`currentRevision`、`targetRevision`、`lastFailedRevision`、`lastFailedReason`）。`installer-<N>-<ノード>` Pod の終了の理由。revision を作った契機は、ConfigMap `revision-status-<N>` の `reason`。`lastFailedRevision` が残っていれば、古い revision の ConfigMap や Secret が消されずに残っていないか（revision-pruner への影響はナレッジベースで確かめる） |
 | Operator（OLM） | Subscription、InstallPlan、ClusterServiceVersion の `phase` と conditions |
 | ノード、MachineConfig | MachineConfigPool の conditions。ノードの annotation `machineconfiguration.openshift.io/state`、`currentConfig`、`desiredConfig`、`reason` |
 | ストレージ（CSI） | StorageClass の `provisioner`（担当の CSI Driver）。PV の `persistentVolumeReclaimPolicy`（`Delete` なら、PV と一緒にストレージ側の Volume も消す）と finalizer `external-provisioner.volume.kubernetes.io/finalizer`（ストレージ側の Volume を消し終えるまで PV を残す）。ストレージ側の Volume との対応は、PV の `spec.csi.volumeHandle` と `volumeAttributes` で見る（形は CSI Driver ごとに違う）。`Released`、`Failed`、`Terminating` のまま残る PV は、CSI Driver の `provisioner` コンテナのログを見る |
@@ -151,10 +151,17 @@ OpenShift では、コントローラー（Operator、CSI Driver、kubelet な�
 
 - 情報元の優先順: 1. クラスタと同じバージョンの Red Hat 公式ドキュメント、2. Red Hat ナレッジベース、3. バグ報告（OCPBUGS、Bugzilla）と修正されたバージョン、4. アップストリームのドキュメントや Issue。
 - 実際に開いて確かめたものだけを書く。URL を推測で作らない。ログインが必要で読めない記事は「内容は確認していない」と書く。
-- 検索語には、エラーメッセージのクラスタ固有でない部分とコンポーネント名を使う。クラスタ名、ホスト名、IP アドレスは入れない。
+- 検索語には、エラーメッセージのクラスタ固有でない部分とコンポーネント名を使う。クラスタ名、ホスト名、IP アドレスは入れない。見つからなければ語を変えて探す（must-gather で見つけたリソースの項目名や理由（`<項目名>`）でも探す）。
+- 検索結果の題名だけで決めず、本文を読んで事象と合うかを確かめる。本文が別の記事や文書を参照していれば、それも読む。
+- 情報元が示す原因・影響・条件が、このクラスタに当てはまるかは、must-gather で確かめてから書く。
+- Red Hat ナレッジベースの MCP（`mcp__rhkcs__*`）が使えるときは、ナレッジベースは `mcp__rhkcs__search_kcs` で探し、`mcp__rhkcs__get_kcs` で読む（ログインが必要な記事も読める）。
+  - 情報元には、ID、題名、`get_kcs` が返す URL と、`get_kcs` で取得したことを書く。
+  - article は要約しか読めないので、要約で確かめた範囲だけを書く。
+  - 購読者向けの内容なので、引用は根拠に必要な短い文にとどめる。改行を詰めて引用したときは、そう書く。
+  - 返るコマンドは空白が抜けているので、そのまま写さない。公式ドキュメントに同じ操作があればその書き方に合わせ、無ければ空白を補って書き直し、そう書く。
 - WebFetch の答えは要約されることがある。報告書に引用する文は、「原文を一字一句そのまま写す」よう指示して取り直す。
 - WebFetch は一度に約 10 万字までしか読まない。docs.redhat.com は章のページ（`…/<x.y>/html/<ガイド>/<章>`）を開き、1 回目で節の名前を確かめ、`offset` を進めて引用させる。クラスタのバージョンのページが見つからなければ、古いバージョンの同じ節を見つけ、URL のバージョンを変えて確かめる。
-- 同じ症状の事例は、この事象と一致する点と違う点を書く。
+- 同じ症状の事例は、この事象と一致する点と違う点（当てはまらない条件を含む）を書く。
 - 対処案は推奨する順に書き、クラスタを変更するものには影響と切り戻しを書く。元に戻せない操作は、対象を誤らないための確認を手順の前に書く。
 - 対処が不要なら「何もしない」を推奨し、根拠（いまの状態）を示す。
 - 対処案は「確認事項 N への回答」として確認事項ごとに書く（原因を問う確認事項は「原因」の節で答える）。認識を問われたら「合っている / 合っていない / 条件付きで合っている」を先に書く。
