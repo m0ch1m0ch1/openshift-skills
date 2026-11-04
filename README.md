@@ -5,7 +5,7 @@ OpenShift の作業を支援する Claude Code 用のスキル集です。
 ## スキル
 
 | スキル | 使う場面 | やること | できあがるもの |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | [openshift-runbook](.claude/skills/openshift-runbook/README.md) | 設定や構築をしたい | 公式ドキュメントをもとに YAML と確認スクリプトを作り、承認を得てから、接続中のクラスタで適用から切り戻しまで試す | 検証済みの手順書（`runbook.md`） |
 | [openshift-must-gather-analysis](.claude/skills/openshift-must-gather-analysis/README.md) | 起きた事象の原因を知りたい | must-gather を omc で調べ、事象から原因へさかのぼる。クラスタには接続しない | 原因と対処案の報告書（`report.md`。根拠のファイルと行、情報元付き） |
 | [rhkcs-mcp-setup](.claude/skills/rhkcs-mcp-setup/README.md)（任意） | 上の 2 つのスキルで、Red Hat ナレッジベースも参照したい | ナレッジベースを検索する MCP サーバーを導入し、Red Hat の token を設定する | Claude Code から使えるナレッジベースの検索ツール |
@@ -17,7 +17,7 @@ OpenShift の作業を支援する Claude Code 用のスキル集です。
 `/rhkcs-mcp-setup` で導入すると、ログインが必要なナレッジベースの記事も、スキルが読めるようになります。導入しなくても、どちらのスキルも使えます。
 
 | スキル | ナレッジベースを使う場面 |
-|---|---|
+| --- | --- |
 | openshift-runbook | 手順を作るときに、そのバージョンの既知の問題を確かめる。検証が失敗したときに、エラーメッセージで探す |
 | openshift-must-gather-analysis | 対処案の情報元を確かめる |
 
@@ -27,7 +27,7 @@ macOS または Linux で、このリポジトリをクローンし、ルート�
 
 ## 構成
 
-```
+```text
 .
 ├── .claude/
 │   ├── settings.json         # 共有の設定（下を参照）

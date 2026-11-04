@@ -19,7 +19,7 @@ OpenShift の must-gather を omc で調べ、指定した事象の原因と対�
 
 調べたい事象を引数に書いて実行します（省略した場合は、スキルが聞きます）。
 
-```
+```text
 /openshift-must-gather-analysis 昨日の 17 時ごろから、openshift-monitoring の Pod が CrashLoopBackOff になっている
 ```
 
@@ -36,7 +36,7 @@ OpenShift の must-gather を omc で調べ、指定した事象の原因と対�
 
 ## 成果物
 
-```
+```text
 must-gather-analyses/<ケース名>/
 ├── must-gather/    調べた must-gather（展開したもの）
 ├── checklist.md    事象、確認事項、調査項目（チェックリストと結果）
@@ -45,7 +45,7 @@ must-gather-analyses/<ケース名>/
 
 ## 構成
 
-```
+```text
 openshift-must-gather-analysis/
 ├── SKILL.md                      # 進め方
 ├── references/analysis-guide.md  # 調べ方、コマンド、情報元の探し方、checklist.md と報告書の書き方
