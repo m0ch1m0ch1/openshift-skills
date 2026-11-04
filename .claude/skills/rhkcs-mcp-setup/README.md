@@ -5,18 +5,18 @@ Red Hat ナレッジベース（KCS）を検索する MCP サーバーを、こ�
 導入すると、Claude Code が次のツールを使えるようになります（ログインが必要な記事も読めます）。各スキルでの使い方は、[ルートの README](../../../README.md) を参照してください。
 
 | ツール | 内容 |
-|---|---|
+| --- | --- |
 | `mcp__rhkcs__search_kcs` | ナレッジベースの solution と article を検索する（ID、題名、URL） |
 | `mcp__rhkcs__get_kcs` | ID を指定して読む。solution は環境・事象・解決策・根本原因、article は要約だけ（返るコマンドは空白が抜けるので、そのままでは実行できない） |
 
 ## 前提条件
 
-- Go 1.25.0 以上と git が入っている（スキルは入れません。macOS なら `brew install go`、Linux なら配布元のパッケージか https://go.dev/dl/ ）。
-- Red Hat アカウントで、offline token を作れる（https://access.redhat.com/management/api ）。
+- Go 1.25.0 以上と git が入っている（スキルは入れません。macOS なら `brew install go`、Linux なら配布元のパッケージか <https://go.dev/dl/>）。
+- Red Hat アカウントで、offline token を作れる（<https://access.redhat.com/management/api>）。
 
 ## 使い方
 
-```
+```text
 /rhkcs-mcp-setup
 ```
 
@@ -63,7 +63,7 @@ Red Hat ナレッジベース（KCS）を検索する MCP サーバーを、こ�
 
 すべて、リポジトリの中の `.rhkcs/`（Git の管理対象外）に置きます。リポジトリの外には書き込みません。
 
-```
+```text
 .rhkcs/
 ├── src/      ソース（固定したコミット）
 ├── bin/      rhkcs-mcp と、ビルドしたコミット（rhkcs-mcp.commit）
@@ -80,7 +80,7 @@ Red Hat ナレッジベース（KCS）を検索する MCP サーバーを、こ�
 
 ## 構成
 
-```
+```text
 rhkcs-mcp-setup/
 ├── SKILL.md            # 進め方
 └── scripts/rhkcs.sh    # 確認、ビルド、token の保存、動作の確認、新しい版の確認、MCP サーバーの起動（使い方は bash .claude/skills/rhkcs-mcp-setup/scripts/rhkcs.sh で表示）

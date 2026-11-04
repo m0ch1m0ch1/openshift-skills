@@ -3,10 +3,10 @@
 
 - 結果: **PASS**（切り戻し OK / クリーンアップ OK）
 - 日時: 2026-11-04 00:03
-- 接続先: https://api.<クラスタのドメイン>:6443（プロジェクト default、OpenShift 4.22.20、system:admin）
+- 接続先: `https://api.<クラスタのドメイン>:6443`（プロジェクト default、OpenShift 4.22.20、system:admin）
 
 | ステップ | 作業 | 結果 | 秒 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 01-operator | MetalLB Operator をインストールする | OK | 93 |
 | 02-metallb | MetalLB のインスタンスを作成する | OK | 14 |
 | 03-l2 | IP アドレスプールと L2 アドバタイズメントを作成する | OK | 2 |

@@ -3,10 +3,10 @@
 
 - 結果: **PASS**（切り戻し OK / クリーンアップ OK）
 - 日時: 2026-11-04 10:16
-- 接続先: https://api.<クラスタのドメイン>:6443（プロジェクト default、OpenShift 4.22.20、system:admin）
+- 接続先: `https://api.<クラスタのドメイン>:6443`（プロジェクト default、OpenShift 4.22.20、system:admin）
 
 | ステップ | 作業 | 結果 | 秒 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 01-namespace | Namespace を作成する | OK | 1 |
 | 02-deployment | nginx の Deployment を作成する | OK | 3 |
 | 03-service | Service を作成する | OK | 1 |

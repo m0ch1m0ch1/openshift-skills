@@ -15,7 +15,7 @@ nginx を 1 つの Pod で実行し、Service と Route（edge TLS 終端）を�
 ## パラメータ
 
 | 項目 | 値 | ファイル |
-|---|---|---|
+| --- | --- | --- |
 | Namespace | hello-route | 全ファイル |
 | イメージ | quay.io/nginx/nginx-unprivileged:1.27 | manifests/02-deployment.yaml |
 

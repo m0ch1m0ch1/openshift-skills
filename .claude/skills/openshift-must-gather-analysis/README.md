@@ -19,14 +19,14 @@ OpenShift の must-gather を omc で調べ、指定した事象の原因と対�
 
 調べたい事象を引数に書いて実行します（省略した場合は、スキルが聞きます）。
 
-```
+```text
 /openshift-must-gather-analysis 昨日の 17 時ごろから、openshift-monitoring の Pod が CrashLoopBackOff になっている
 ```
 
 次の順に進みます。
 
 1. omc の導入状況と、Red Hat ナレッジベースの MCP（rhkcs）が使えるかを確認する。
-2. must-gather を置く場所を案内し、置いたら展開する（ケース名は must-gather の取得日時になる）。
+2. must-gather を置く場所を案内し、置いたら展開する（ケース名を指定しなければ、must-gather の取得日時になる）。
 3. 取得日時とバージョンを示して事象を整理し、`checklist.md` に事象・確認事項・調査項目を書いて示す。
 4. 異常の概要から調査の起点を決め、調査項目を見直す。
 5. `report.md` を作り、調査項目を調べてチェックしながら、起点から「なぜそうなったか」をさかのぼる。見つけた事実と未確認事項は、その都度報告書に書き足す。
@@ -36,7 +36,7 @@ OpenShift の must-gather を omc で調べ、指定した事象の原因と対�
 
 ## 成果物
 
-```
+```text
 must-gather-analyses/<ケース名>/
 ├── must-gather/    調べた must-gather（展開したもの）
 ├── checklist.md    事象、確認事項、調査項目（チェックリストと結果）
@@ -45,7 +45,7 @@ must-gather-analyses/<ケース名>/
 
 ## 構成
 
-```
+```text
 openshift-must-gather-analysis/
 ├── SKILL.md                      # 進め方
 ├── references/analysis-guide.md  # 調べ方、コマンド、情報元の探し方、checklist.md と報告書の書き方
@@ -56,6 +56,6 @@ openshift-must-gather-analysis/
 
 ## データの置き場所
 
-- ケースは `must-gather-analyses/<case>/` に置きます（Git の管理対象外。環境変数 `ANALYSIS_DIR` で変えられます）。展開した元のアーカイブは消します。
+- ケースは `must-gather-analyses/<ケース名>/` に置きます（Git の管理対象外。環境変数 `ANALYSIS_DIR` で変えられます）。展開した元のアーカイブは消します。
 - omc の設定（どの must-gather を使うか）は、`~/.omc/omc.json` ではなく `must-gather-analyses/.omc/omc.json` に保存します（環境変数 `OMCCONFIG`。`.claude/settings.json` の `env` で設定しており、Claude Code を起動し直すと有効になります）。
-- `mg.sh` はリポジトリの外に書き込まず、must-gather の外を指すパスやアーカイブの中身は読みません。
+- `mg.sh` はリポジトリの外に書き込みません。must-gather の外を指すパスやシンボリックリンクは読まず、展開先の外を指すファイルを含むアーカイブは展開しません。外を指すシンボリックリンクがあれば、続きのアーカイブも展開しません。

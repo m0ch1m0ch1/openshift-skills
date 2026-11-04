@@ -12,9 +12,11 @@
 #                                            must-gather/ の外 (ケースのディレクトリの直下) に置かれていれば、must-gather/ に移す
 #                                            アーカイブ (tar.gz / tgz / tar / tar.xz / zip) を置いた場合は、その場で展開し、元のアーカイブを消す
 #                                            ケース名が仮の new-<作成日時> なら、must-gather の取得日時 (日本時間の YYYYMMDD-HHMMSS) に付け直す
+#                                            (展開先の外を指すファイルを含むアーカイブや、一覧できないアーカイブは展開しない。
+#                                             外を指すシンボリックリンクがあれば、続きのアーカイブを展開せず、omc でも読まない)
 #   mg.sh plan     <case>                    確認事項のファイル (checklist.md: 事象、確認事項、調査項目) のひな形を作る
 #   mg.sh items    <case>                    checklist.md の確認事項と調査項目を、進み具合 (調べ済みの数) と一緒に表示する
-#   mg.sh overview <case>                   異常の概要 (ClusterVersion と最近のアップデート、ClusterOperator、ノード、Pod、MCP、アラート、Warning イベント)。調査の起点を探すために使う
+#   mg.sh overview <case>                    異常の概要 (ClusterVersion と最近のアップデート、ClusterOperator、ノード、Pod、MCP、アラート、Warning イベント)。調査の起点を探すために使う
 #   mg.sh ns       <case> [<ns>]             Namespace について、must-gather に含まれるリソースと、Pod のログの有無・期間を表示する
 #                                            (引数が無ければ、OpenShift 以外の Namespace の一覧と、Pod・ログの数)
 #   mg.sh cond     <case> <file>             リソースの status.conditions を、条件ごとに 1 行で行番号付きで表示する (ClusterOperator、ノード、MCP など)
@@ -37,7 +39,7 @@
 #   (終了コード: 0=OK 1=lint などの NG 3=開始できない 10=omc が無い)
 #
 # 環境変数:
-#   ANALYSIS_DIR  調査 (ケース) を置くディレクトリ (既定: Git リポジトリのルートの must-gather-analyses/)
+#   ANALYSIS_DIR  調査 (ケース) を置くディレクトリ (既定: リポジトリのルートの must-gather-analyses/。ルートはスクリプトの場所から決める)
 #   MG_MAX        各サブコマンドが表示する最大行数 (既定: 50)
 #   OMCCONFIG     omc の設定ファイル (どの must-gather を使うか)。既定: must-gather-analyses/.omc/omc.json (~/.omc の代わり)
 #
@@ -89,8 +91,19 @@ inside() {
 ok_file() { case "/$1/" in //*|*/../*) return 1;; esac; [ -f "$R/$1" ] && [ ! -L "$R/$1" ] && inside "$R/$1"; }
 need_file() { ok_file "$1" || die "$1 がありません (must-gather のルートからの相対パスで指定する。.. やシンボリックリンク、ルートの外を指すものは読まない)"; }
 need_omc() { command -v omc >/dev/null 2>&1 || { echo "[NG] omc がありません"; echo "次: mg.sh check"; exit 10; }; }
+# no_outside_links <しないこと>: must-gather/ の中に、絶対パスか .. を指すシンボリックリンクがあれば、止める
+#   omc、アーカイブの展開 (tar・unzip)、find はリンクを辿るため、その前に確かめる
+#   (どのリンクも、そのディレクトリの下だけを指していれば、リンクを辿っても must-gather/ の外には出ない)
+no_outside_links() {
+  local l t
+  while IFS= read -r l; do
+    t="$(readlink "$l")"
+    case "/$t/" in //*|*/../*) echo "[NG] must-gather の外を指す可能性のあるシンボリックリンクがあるため、$1: ${l#"$DIR"/} -> $t"
+      echo "案内: must-gather を取り直すか、そのシンボリックリンクを消すかをユーザーに聞く"; exit 3;; esac
+  done < <(find "$DIR/$SLUG/must-gather" -type l 2>/dev/null)
+}
 # use_mg: omc の対象を、このケースの must-gather にする (omc use は全体の設定なので、毎回選び直す)
-use_mg() { need_root; need_omc; mkdir -p "$(dirname "$OMCCONFIG")"; omc use "$R" >/dev/null 2>&1 || die "omc use に失敗しました: $R"; }
+use_mg() { need_root; need_omc; no_outside_links "omc では読みません"; mkdir -p "$(dirname "$OMCCONFIG")"; omc use "$R" >/dev/null 2>&1 || die "omc use に失敗しました: $R"; }
 # lim: 標準入力を最大 MAX 行に絞る。見出しの行だけのときは「該当なし」
 lim() {
   awk -v max="$MAX" '
@@ -183,7 +196,7 @@ cmd_list() {
   while IFS= read -r f; do echo "[WARN] ケースに入っていない must-gather: ${f#$DIR/} (mg.sh new で、新しいケースに移す)"; done < <(loose)
   ls -d "$DIR"/*/must-gather >/dev/null 2>&1 || { echo "$DIR/ にケースはありません"; return 0; }
   echo "| ケース | must-gather | 取得日時 | バージョン | 報告書 |"
-  echo "|---|---|---|---|---|"
+  echo "| --- | --- | --- | --- | --- |"
   for c in "$DIR"/*/must-gather; do
     c="$(basename "$(dirname "$c")")"
     r="$(root "$c")"
@@ -215,7 +228,7 @@ cmd_new() {
 
 # prepare <case>: ケースの must-gather/ に置いたものを使う。アーカイブはその場で展開する
 cmd_prepare() {
-  local c="$DIR/$SLUG/must-gather" a d
+  local c="$DIR/$SLUG/must-gather" a d lst
   [ -d "$c" ] || die "$c がありません (先に mg.sh new)"
   # 展開済みの must-gather が無ければ、置かれたアーカイブを展開する
   if ! root "$SLUG" >/dev/null; then
@@ -230,16 +243,26 @@ cmd_prepare() {
     done
     while IFS= read -r a; do
       echo "展開します: ${a#$c/}"
+      # 前に展開したアーカイブ (や置かれたディレクトリ) に外を指すリンクがあると、tar や unzip がそのリンクを通って外に書くため、
+      # 1 つ展開するごとに確かめる (1 つのアーカイブの中では、tar と unzip がリンクを通った書き込みを防ぐ)
+      no_outside_links "アーカイブを展開しません"
       # 中のファイルが、絶対パスや .. で展開先 (ケースのディレクトリ) の外を指していれば、展開しない
-      case "$a" in
-        *.zip) unzip -Z1 "$a" ;;
-        *)     tar tf "$a" ;;
-      esac 2>/dev/null | has -E '^/|(^|/)\.\.(/|$)' && die "展開先の外を指すファイルが含まれるため、展開しません: $a"
+      #   一覧はファイルに受ける (パイプにすると、pipefail のもとで一覧のコマンドの失敗が判定を打ち消す)。一覧できなければ展開しない
+      lst="$(mktemp "$DIR/$SLUG/.archive-list.XXXXXX")" || die "一時ファイルを作れません: $DIR/$SLUG"
+      if ! case "$a" in
+             *.zip) unzip -Z1 "$a" ;;
+             *)     tar tf "$a" ;;
+           esac > "$lst" 2>/dev/null; then
+        rm -f "$lst"; die "アーカイブの中身を一覧できません (壊れているか、形式が違う): $a"
+      fi
+      if has -E '^/|(^|/)\.\.(/|$)' < "$lst"; then rm -f "$lst"; die "展開先の外を指すファイルが含まれるため、展開しません: $a"; fi
+      rm -f "$lst"
+      # 途中で止まった展開をやり直すときに、残ったファイルを上書きする (tar と同じ。unzip は聞いてきて、入力が無いと失敗する)
       case "$a" in
         *.tar.gz|*.tgz) tar xzf "$a" -C "$c" || die "展開できません: $a";;
         *.tar.xz)       tar xJf "$a" -C "$c" || die "展開できません: $a";;
         *.tar)          tar xf  "$a" -C "$c" || die "展開できません: $a";;
-        *.zip)          unzip -q "$a" -d "$c" || die "展開できません: $a";;
+        *.zip)          unzip -oq "$a" -d "$c" || die "展開できません: $a";;
       esac
       rm -f "$a" && echo "元のアーカイブを消しました: ${a#$c/}"
     done < <(find "$c" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tgz' -o -name '*.tar.xz' -o -name '*.tar' -o -name '*.zip' \) | LC_ALL=C sort)
@@ -536,12 +559,15 @@ term_msg() {
 cmd_ns() {
   local ns="${1:-}" d n p l pod c f
   need_root
+  # Namespace やディレクトリの一覧は、パスの途中のリンク (namespaces/ や pods/ そのもの) を辿るため、先に確かめる
+  no_outside_links "Namespace の一覧を出しません"
   if [ -z "$ns" ]; then
     echo "| Namespace | Pod | ログのあるコンテナ |"
-    echo "|---|---|---|"
+    echo "| --- | --- | --- |"
     for d in "$R"/namespaces/*/; do
       n="$(basename "$d")"
       case "$n" in openshift|openshift-*|kube-*|default) continue;; esac
+      [ ! -L "${d%/}" ] || continue   # シンボリックリンクの先 (must-gather の外かもしれない) は数えない
       p="$(find "$d/pods" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | grep -c .)"
       l="$(find "$d/pods" -name current.log -size +0 2>/dev/null | grep -c .)"
       echo "| $n | $p | $l |"
@@ -641,20 +667,24 @@ quotes() {
     s = $0
     while (match(s, /`[^` ]+\/[^` ]+:[0-9]+(-[0-9]+)?`/)) {
       ref = substr(s, RSTART + 1, RLENGTH - 2); s = substr(s, RSTART + RLENGTH)
+      if (index(ref, "://")) continue   # URL の引用 (refs と同じく、パスとして扱わない)
       t = s; sub(/^ */, "", t)
       if (index(t, "「") != 1) continue
       t = substr(t, length("「") + 1); e = index(t, "」"); if (!e) continue
       p = ref; sub(/:[0-9]+(-[0-9]+)?$/, "", p)
       r = substr(ref, length(p) + 2); a = r; b = ""
       if (index(r, "-")) { a = substr(r, 1, index(r, "-") - 1); b = substr(r, index(r, "-") + 1) }
-      print p us a us b us substr(t, 1, e - 1)
+      # 「`…`」 (URL や * _ を含む行を、Markdown として解釈させないためのコード表記) は、` を除いて比べる
+      q = substr(t, 1, e - 1); if (length(q) >= 2 && substr(q, 1, 1) == "`" && substr(q, length(q)) == "`") q = substr(q, 2, length(q) - 2)
+      print p us a us b us q
     }
   }'
 }
 # evidence <report>: 根拠を書く節 (確認した事実、原因)。ほかの節のコマンドを根拠と取り違えないよう、この 2 つだけを見る
 evidence() { section "$1" 確認した事実; section "$1" 原因; }
 # refs: 標準入力から、根拠の参照 (`パス:行` または `パス:行-行`) を "パス 行 行" で出す
-refs() { grep -oE '`[^` ]+/[^` ]+:[0-9]+(-[0-9]+)?`' | tr -d '`' | sed -E 's/:([0-9]+)(-([0-9]+))?$/ \1 \3/'; }
+#   URL (「`https://<host>:443`」のような引用) は、パスと取り違えないよう除く
+refs() { grep -oE '`[^` ]+/[^` ]+:[0-9]+(-[0-9]+)?`' | grep -vF '://' | tr -d '`' | sed -E 's/:([0-9]+)(-([0-9]+))?$/ \1 \3/'; }
 
 cmd_lint() {
   local f="$DIR/$SLUG/report.md" cl="$DIR/$SLUG/checklist.md" fail=0 s p a b total n
