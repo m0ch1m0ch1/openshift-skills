@@ -1,0 +1,8 @@
+ipaddresspool.metallb.io/l2-pool created
+l2advertisement.metallb.io/l2-adv created
+--- check:1
+NAME      AUTO ASSIGN   AVOID BUGGY IPS   ADDRESSES
+l2-pool   true          false             ["192.0.2.150-192.0.2.180"]
+--- check:2
+NAME     IPADDRESSPOOLS   IPADDRESSPOOL SELECTORS   INTERFACES
+l2-adv   ["l2-pool"]

@@ -1,0 +1,3 @@
+route.route.openshift.io/hello created
+--- check:1
+https://hello-hello-route.apps.<クラスタのドメイン>/ -> 200

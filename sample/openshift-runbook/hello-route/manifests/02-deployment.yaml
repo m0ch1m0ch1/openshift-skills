@@ -1,0 +1,21 @@
+# nginx の Deployment を作成する
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello
+  namespace: hello-route
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hello
+  template:
+    metadata:
+      labels:
+        app: hello
+    spec:
+      containers:
+        - name: nginx
+          image: quay.io/nginx/nginx-unprivileged:1.27
+          ports:
+            - containerPort: 8080

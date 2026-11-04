@@ -1,0 +1,16 @@
+# Route（edge TLS）で公開する
+# 注記: Route のホスト名は、クラスタの Ingress ドメインから自動で設定されます。証明書を指定しないため、Ingress Controller の既定の証明書が使われます。
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: hello
+  namespace: hello-route
+spec:
+  to:
+    kind: Service
+    name: hello
+  port:
+    targetPort: http
+  tls:
+    termination: edge # TLS を Ingress Controller で終端します。
+    insecureEdgeTerminationPolicy: Redirect # HTTP のアクセスを HTTPS にリダイレクトします。

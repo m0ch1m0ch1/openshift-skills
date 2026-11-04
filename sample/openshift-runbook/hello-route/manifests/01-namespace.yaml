@@ -1,0 +1,5 @@
+# Namespace を作成する
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hello-route

@@ -1,0 +1,5 @@
+route.route.openshift.io "hello" deleted from hello-route namespace
+service "hello" deleted from hello-route namespace
+deployment.apps "hello" deleted from hello-route namespace
+namespace "hello-route" deleted
+[OK] 適用した YAML を削除しました

@@ -1,0 +1,6 @@
+namespace "metallb-test" deleted
+deployment.apps "hello" deleted from metallb-test namespace
+service "hello" deleted from metallb-test namespace
+namespace "metallb-system" deleted
+operatorgroup.operators.coreos.com "metallb-operator" deleted from metallb-system namespace
+[OK] 適用した YAML を削除しました

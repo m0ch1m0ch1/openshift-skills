@@ -1,0 +1,24 @@
+namespace/metallb-test created
+deployment.apps/hello created
+service/hello created
+--- check:1
+pod/hello-656fb99587-lswjv condition met
+pod/hello-656fb99587-lswjv condition met
+--- check:2
+NAME                     READY   STATUS    RESTARTS   AGE   IP            NODE         NOMINATED NODE   READINESS GATES
+hello-656fb99587-lswjv   1/1     Running   0          1s    10.128.0.93   <ノード名>   <none>           <none>
+--- check:3
+2026/11/03 15:02:46 [notice] 1#1: start worker process 36
+2026/11/03 15:02:46 [notice] 1#1: start worker process 37
+2026/11/03 15:02:46 [notice] 1#1: start worker process 38
+--- check:4
+service/hello condition met
+--- check:5
+NAME    TYPE           CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE
+hello   LoadBalancer   172.30.41.123   192.0.2.150   8080:31368/TCP   2s
+--- check:6
+http://192.0.2.150:8080/ -> 200
+--- check:7
+REASON         FROM                 MESSAGE
+IPAllocated    metallb-controller   Assigned IP ["192.0.2.150"]
+nodeAssigned   metallb-speaker      announcing from node "<ノード名>" with protocol "layer2"
