@@ -1,11 +1,11 @@
 deployment.apps/hello created
 --- check:1
-pod/hello-656fb99587-zxpns condition met
-pod/hello-656fb99587-zxpns condition met
+pod/hello-656fb99587-76tbt condition met
+pod/hello-656fb99587-76tbt condition met
 --- check:2
-NAME                     READY   STATUS    RESTARTS   AGE   IP             NODE         NOMINATED NODE   READINESS GATES
-hello-656fb99587-zxpns   1/1     Running   0          1s    10.128.0.135   <ノード名>   <none>           <none>
+NAME                     READY   STATUS    RESTARTS   AGE   IP             NODE                          NOMINATED NODE   READINESS GATES
+hello-656fb99587-76tbt   1/1     Running   0          2s    10.128.0.187   <ノード名>                    <none>           <none>
 --- check:3
-2026/11/04 01:16:29 [notice] 1#1: start worker process 36
-2026/11/04 01:16:29 [notice] 1#1: start worker process 37
-2026/11/04 01:16:29 [notice] 1#1: start worker process 38
+2026/11/04 08:42:09 [notice] 1#1: start worker process 36
+2026/11/04 08:42:09 [notice] 1#1: start worker process 37
+2026/11/04 08:42:09 [notice] 1#1: start worker process 38

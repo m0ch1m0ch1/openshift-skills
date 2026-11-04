@@ -4,7 +4,7 @@ nginx を 1 つの Pod で実行し、Service と Route（edge TLS 終端）を�
 
 > **注記**
 >
-> この手順は 2026-11-04 10:16、OpenShift 4.22.20 で検証済みです（詳細: run/result.md）。
+> この手順は 2026-11-04 17:42、OpenShift 4.22.20 で検証済みです（詳細: run/result.md）。
 
 ## 前提条件
 
@@ -107,8 +107,8 @@ nginx を 1 つの Pod で実行し、Service と Route（edge TLS 終端）を�
          **出力例**
 
          ```terminal
-         pod/hello-656fb99587-zxpns condition met
-         pod/hello-656fb99587-zxpns condition met
+         pod/hello-656fb99587-76tbt condition met
+         pod/hello-656fb99587-76tbt condition met
          ```
 
       2. 次のコマンドを実行して、Pod の STATUS が Running であることを確認します。
@@ -120,8 +120,8 @@ nginx を 1 つの Pod で実行し、Service と Route（edge TLS 終端）を�
          **出力例**
 
          ```terminal
-         NAME                     READY   STATUS    RESTARTS   AGE   IP             NODE         NOMINATED NODE   READINESS GATES
-         hello-656fb99587-zxpns   1/1     Running   0          1s    10.128.0.135   <ノード名>   <none>           <none>
+         NAME                     READY   STATUS    RESTARTS   AGE   IP             NODE                          NOMINATED NODE   READINESS GATES
+         hello-656fb99587-76tbt   1/1     Running   0          2s    10.128.0.187   <ノード名>                    <none>           <none>
          ```
 
       3. 次のコマンドを実行して、nginx が起動したことをログで確認します。
@@ -133,9 +133,9 @@ nginx を 1 つの Pod で実行し、Service と Route（edge TLS 終端）を�
          **出力例**
 
          ```terminal
-         2026/11/04 01:16:29 [notice] 1#1: start worker process 36
-         2026/11/04 01:16:29 [notice] 1#1: start worker process 37
-         2026/11/04 01:16:29 [notice] 1#1: start worker process 38
+         2026/11/04 08:42:09 [notice] 1#1: start worker process 36
+         2026/11/04 08:42:09 [notice] 1#1: start worker process 37
+         2026/11/04 08:42:09 [notice] 1#1: start worker process 38
          ```
 
 3. Service を作成します。
@@ -179,7 +179,7 @@ nginx を 1 つの Pod で実行し、Service と Route（edge TLS 終端）を�
 
       ```terminal
       NAME    TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)    AGE
-      hello   ClusterIP   172.30.185.236   <none>        8080/TCP   0s
+      hello   ClusterIP   172.30.175.187   <none>        8080/TCP   0s
       ```
 
 4. Route（edge TLS）で公開します。
@@ -251,7 +251,7 @@ nginx を 1 つの Pod で実行し、Service と Route（edge TLS 終端）を�
 
 ## 成功条件 (DoD)
 
-2026-11-04 10:16 の検証で確認できた成功条件に [x] を付けています。
+2026-11-04 17:42 の検証で確認できた成功条件に [x] を付けています。
 
 - [x] nginx の Pod が Ready になり、起動ログが出力されている。（手順 2）
 - [x] Route の URL に HTTPS でアクセスすると HTTP 200 が返る。（検証）

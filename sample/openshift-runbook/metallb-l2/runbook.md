@@ -4,7 +4,7 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 
 > **注記**
 >
-> この手順は 2026-11-04 00:03、OpenShift 4.22.20 で検証済みです（詳細: run/result.md）。
+> この手順は 2026-11-04 17:49、OpenShift 4.22.20 で検証済みです（詳細: run/result.md）。
 
 ## 前提条件
 
@@ -12,7 +12,7 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 - クラスタから redhat-operators カタログと quay.io のイメージを取得できる。
 - IP アドレスプールに割り当てるアドレスが、ノードと同じ L2 セグメントにあり、ほかの機器で使用されていない。
 - 作業端末から IP アドレスプールのアドレスに HTTP でアクセスできる。
-- コマンドは、この手順書があるディレクトリで実行する。
+- コマンドは、この手順書があるディレクトリ (manifests/ と scripts/ がある場所) で実行する。
 
 ## パラメータ
 
@@ -114,7 +114,7 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 
          ```terminal
          NAME            CSV                                     APPROVAL    APPROVED
-         install-8x46f   metallb-operator.v4.22.0-202610271454   Automatic   true
+         install-c5chw   metallb-operator.v4.22.0-202610271454   Automatic   true
          ```
 
 2. MetalLB のインスタンスを作成します。
@@ -159,10 +159,10 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
          **出力例**
 
          ```terminal
-         pod/controller-5f68d9f97c-wzsrs condition met
-         pod/controller-5f68d9f97c-wzsrs condition met
-         pod/speaker-6hlv6 condition met
-         pod/speaker-6hlv6 condition met
+         pod/controller-5f68d9f97c-5njlh condition met
+         pod/controller-5f68d9f97c-5njlh condition met
+         pod/speaker-4kt2b condition met
+         pod/speaker-4kt2b condition met
          ```
 
       2. 次のコマンドを実行して、controller の Deployment が AVAILABLE になっていることを確認します。
@@ -175,7 +175,7 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 
          ```terminal
          NAME         READY   UP-TO-DATE   AVAILABLE   AGE
-         controller   1/1     1            1           12s
+         controller   1/1     1            1           14s
          ```
 
       3. 次のコマンドを実行して、speaker の DaemonSet の READY がノード数と同じであることを確認します。
@@ -188,7 +188,7 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 
          ```terminal
          NAME      DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
-         speaker   1         1         1       1            1           kubernetes.io/os=linux   13s
+         speaker   1         1         1       1            1           kubernetes.io/os=linux   15s
          ```
 
       4. 次のコマンドを実行して、Pod の STATUS が Running であることを確認します。
@@ -200,9 +200,9 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
          **出力例**
 
          ```terminal
-         NAME                          READY   STATUS    RESTARTS   AGE   IP            NODE         NOMINATED NODE   READINESS GATES
-         controller-5f68d9f97c-wzsrs   2/2     Running   0          13s   10.128.0.92   <ノード名>   <none>           <none>
-         speaker-6hlv6                 2/2     Running   0          13s   192.0.2.82    <ノード名>   <none>           <none>
+         NAME                          READY   STATUS    RESTARTS   AGE   IP              NODE                          NOMINATED NODE   READINESS GATES
+         controller-5f68d9f97c-5njlh   2/2     Running   0          15s   10.128.0.201    <ノード名>                    <none>           <none>
+         speaker-4kt2b                 2/2     Running   0          15s   192.0.2.82      <ノード名>                    <none>           <none>
          ```
 
 3. IP アドレスプールと L2 アドバタイズメントを作成します。
@@ -271,7 +271,7 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 
          ```terminal
          NAME     IPADDRESSPOOLS   IPADDRESSPOOL SELECTORS   INTERFACES
-         l2-adv   ["l2-pool"]
+         l2-adv   ["l2-pool"]                                
          ```
 
 4. 動作確認用のアプリケーションを LoadBalancer タイプの Service で公開します。
@@ -352,8 +352,8 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
       **出力例**
 
       ```terminal
-      pod/hello-656fb99587-lswjv condition met
-      pod/hello-656fb99587-lswjv condition met
+      pod/hello-656fb99587-v52ks condition met
+      pod/hello-656fb99587-v52ks condition met
       ```
 
    2. 次のコマンドを実行して、Pod の STATUS が Running であることを確認します。
@@ -365,8 +365,8 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
       **出力例**
 
       ```terminal
-      NAME                     READY   STATUS    RESTARTS   AGE   IP            NODE         NOMINATED NODE   READINESS GATES
-      hello-656fb99587-lswjv   1/1     Running   0          1s    10.128.0.93   <ノード名>   <none>           <none>
+      NAME                     READY   STATUS    RESTARTS   AGE   IP             NODE                          NOMINATED NODE   READINESS GATES
+      hello-656fb99587-v52ks   1/1     Running   0          1s    10.128.0.207   <ノード名>                    <none>           <none>
       ```
 
    3. 次のコマンドを実行して、nginx が起動したことをログで確認します。
@@ -378,9 +378,9 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
       **出力例**
 
       ```terminal
-      2026/11/03 15:02:46 [notice] 1#1: start worker process 36
-      2026/11/03 15:02:46 [notice] 1#1: start worker process 37
-      2026/11/03 15:02:46 [notice] 1#1: start worker process 38
+      2026/11/04 08:49:00 [notice] 1#1: start worker process 36
+      2026/11/04 08:49:00 [notice] 1#1: start worker process 37
+      2026/11/04 08:49:00 [notice] 1#1: start worker process 38
       ```
 
    4. 次のコマンドを実行して、Service に外部 IP アドレスが割り当てられるまで待機します。
@@ -404,8 +404,8 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
       **出力例**
 
       ```terminal
-      NAME    TYPE           CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE
-      hello   LoadBalancer   172.30.41.123   192.0.2.150   8080:31368/TCP   2s
+      NAME    TYPE           CLUSTER-IP       EXTERNAL-IP      PORT(S)          AGE
+      hello   LoadBalancer   172.30.155.148   192.0.2.150      8080:32584/TCP   3s
       ```
 
    6. 次のコマンドを実行して、作業端末から外部 IP アドレスにアクセスし、200 が返ることを確認します。
@@ -437,7 +437,7 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 
 ## 成功条件 (DoD)
 
-2026-11-04 00:03 の検証で確認できた成功条件に [x] を付けています。
+2026-11-04 17:49 の検証で確認できた成功条件に [x] を付けています。
 
 - [x] MetalLB Operator の CSV の PHASE が Succeeded になっている。（手順 1）
 - [x] controller と speaker の Pod が Running になっている。（手順 2）
@@ -461,17 +461,22 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 >
 > frrk8s.metallb.io の CRD は OpenShift の Network Operator が管理しているため、削除しません。
 
+> **注記**
+>
+> 次のコマンドは、同じシェルで上から順に実行します。途中で「止めます」と表示された場合は、それ以降のコマンドを実行しないでください。
+
 ### 手順
 
 1. 次のコマンドを実行して、この手順で作成していない MetalLB のリソースが無いことを確認します。
 
    ```terminal
    $ if oc get crd metallbs.metallb.io >/dev/null 2>&1; then
-     others=$(oc get metallb,ipaddresspool,l2advertisement,bgppeer,bgpadvertisement,bfdprofile,community --all-namespaces --no-headers -o custom-columns=KIND:.kind,NS:.metadata.namespace,NAME:.metadata.name 2>/dev/null | grep -vE '^(MetalLB +metallb-system +metallb|IPAddressPool +metallb-system +l2-pool|L2Advertisement +metallb-system +l2-adv)$' || true)
+     all=$(oc get metallb,ipaddresspool,l2advertisement,bgppeer,bgpadvertisement,bfdprofile,community --all-namespaces --no-headers -o custom-columns=KIND:.kind,NS:.metadata.namespace,NAME:.metadata.name)
+     others=$(printf '%s\n' "$all" | grep -vE '^(MetalLB +metallb-system +metallb|IPAddressPool +metallb-system +l2-pool|L2Advertisement +metallb-system +l2-adv)$' | grep . || true)
      if [ -n "$others" ]; then
-       echo "この手順で作成していない MetalLB のリソースがあるため、削除せずに止めます:"
+       echo "この手順で作成していない MetalLB のリソースがあるため、止めます:"
        echo "$others"
-       exit 1
+       false
      fi
    fi
    ```
