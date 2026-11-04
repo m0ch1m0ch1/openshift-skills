@@ -2,7 +2,7 @@
 
 Red Hat ナレッジベース（KCS）を検索する MCP サーバーを、このリポジトリの Claude Code で使えるようにするスキルです。MCP サーバーには、[cldmnky/mcp-servers](https://github.com/cldmnky/mcp-servers) の rhkcs-mcp（Apache-2.0）を使います。
 
-導入すると、Claude Code が次のツールを使えるようになります。ログインが必要なナレッジベースの記事も読めます。openshift-runbook は手順を作るときに既知の問題を確かめるのに、openshift-must-gather-analysis は対処案の情報元を確かめるのに使います。
+導入すると、Claude Code が次のツールを使えるようになります（ログインが必要な記事も読めます）。各スキルでの使い方は、[ルートの README](../../../README.md) を参照してください。
 
 | ツール | 内容 |
 |---|---|
@@ -30,9 +30,9 @@ Red Hat ナレッジベース（KCS）を検索する MCP サーバーを、こ�
 
 ## 新しい版にする
 
-ビルドに使うソースは、確かめたコミット（`rhkcs.sh` の `PIN`）に固定しています。取得元が更新されても、勝手には変わりません。確かめていないコードに token を渡さないためです。
+ビルドに使うソースは、確かめたコミット（`rhkcs.sh` の `PIN`）に固定しています。確かめていないコードに token を渡さないためです。
 
-新しい版にしたいときは、`/rhkcs-mcp-setup 更新` のように、更新したいことを伝えて実行します（普段の導入と確認は、引数なしで実行します）。
+新しい版にしたいときは、`/rhkcs-mcp-setup 更新` のように、更新したいことを伝えて実行します。
 
 1. 固定したコミットから最新までの変更を表示する（`rhkcs.sh update`）。増えたコミット、変わったファイル、特に気をつける変更（通信先の URL、token・認証、環境変数、ツールの名前と引数を含む行）、必要な Go の版が出ます。
 2. スキルが要点を添えて、上げてよいかを聞く。
@@ -57,7 +57,7 @@ Red Hat ナレッジベース（KCS）を検索する MCP サーバーを、こ�
 - Claude Code は起動するときに `rhkcs.sh run` を実行し、stdio で MCP サーバーとやり取りします（ネットワークで待ち受けません）。プロジェクトの MCP サーバーなので、初めて使うときに Claude Code が承認を求めます。
 - `rhkcs.sh run` は、`.rhkcs/token` から token を読み、環境変数 `RH_API_OFFLINE_TOKEN` にしてバイナリを起動します。token は `.mcp.json` にも `~/.claude.json` にも書きません。
 - rhkcs-mcp が通信するのは、`sso.redhat.com`（token の交換）と `access.redhat.com`（検索）だけです。
-- ビルドに使うリポジトリとコミットは、`rhkcs.sh` の `REPO_URL` と `PIN` で固定しています。`rhkcs.sh run` は、固定したコミットでビルドしたバイナリだけを起動します（`PIN` を変えたら、`rhkcs.sh build` でビルドし直すまで起動しません）。
+- ビルドに使うリポジトリは `rhkcs.sh` の `REPO_URL` で固定しています。`rhkcs.sh run` は、`PIN` のコミットでビルドしたバイナリだけを起動します（`PIN` を変えたら、`rhkcs.sh build` でビルドし直すまで起動しません）。
 
 ## データの置き場所
 

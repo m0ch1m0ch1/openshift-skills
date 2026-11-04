@@ -1,0 +1,4 @@
+service/hello created
+--- check:1
+NAME    TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)    AGE
+hello   ClusterIP   172.30.185.236   <none>        8080/TCP   0s

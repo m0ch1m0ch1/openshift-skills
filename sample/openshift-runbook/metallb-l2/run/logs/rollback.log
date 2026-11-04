@@ -1,0 +1,19 @@
+--- rollback:1
+--- rollback:2
+l2advertisement.metallb.io "l2-adv" deleted from metallb-system namespace
+ipaddresspool.metallb.io "l2-pool" deleted from metallb-system namespace
+metallb.metallb.io "metallb" deleted from metallb-system namespace
+--- rollback:3
+subscription.operators.coreos.com "metallb-operator-sub" deleted from metallb-system namespace
+clusterserviceversion.operators.coreos.com "metallb-operator.v4.22.0-202610271454" deleted from metallb-system namespace
+--- rollback:4
+customresourcedefinition.apiextensions.k8s.io "bfdprofiles.metallb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "bgpadvertisements.metallb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "bgppeers.metallb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "communities.metallb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "configurationstates.metallb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "ipaddresspools.metallb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "l2advertisements.metallb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "metallbs.metallb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "servicebgpstatuses.metallb.io" deleted
+customresourcedefinition.apiextensions.k8s.io "servicel2statuses.metallb.io" deleted

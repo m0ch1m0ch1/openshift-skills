@@ -1,0 +1,40 @@
+# 動作確認用のアプリケーションを LoadBalancer タイプの Service で公開する
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: metallb-test
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello
+  namespace: metallb-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hello
+  template:
+    metadata:
+      labels:
+        app: hello
+    spec:
+      containers:
+        - name: nginx
+          image: quay.io/nginx/nginx-unprivileged:1.27
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello
+  namespace: metallb-test
+spec:
+  type: LoadBalancer # MetalLB が IP アドレスプールから外部 IP アドレスを割り当てます。
+  selector:
+    app: hello
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

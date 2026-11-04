@@ -1,0 +1,18 @@
+# IP アドレスプールと L2 アドバタイズメントを作成する
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: l2-pool
+  namespace: metallb-system
+spec:
+  addresses:
+    - 192.0.2.150-192.0.2.180
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: l2-adv
+  namespace: metallb-system
+spec:
+  ipAddressPools: # L2 モードでアドバタイズする IP アドレスプールを指定します。
+    - l2-pool

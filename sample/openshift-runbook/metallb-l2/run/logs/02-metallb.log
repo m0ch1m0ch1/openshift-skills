@@ -1,0 +1,16 @@
+metallb.metallb.io/metallb created
+--- check:1
+pod/controller-5f68d9f97c-wzsrs condition met
+pod/controller-5f68d9f97c-wzsrs condition met
+pod/speaker-6hlv6 condition met
+pod/speaker-6hlv6 condition met
+--- check:2
+NAME         READY   UP-TO-DATE   AVAILABLE   AGE
+controller   1/1     1            1           12s
+--- check:3
+NAME      DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
+speaker   1         1         1       1            1           kubernetes.io/os=linux   13s
+--- check:4
+NAME                          READY   STATUS    RESTARTS   AGE   IP            NODE         NOMINATED NODE   READINESS GATES
+controller-5f68d9f97c-wzsrs   2/2     Running   0          13s   10.128.0.92   <ノード名>   <none>           <none>
+speaker-6hlv6                 2/2     Running   0          13s   192.0.2.82    <ノード名>   <none>           <none>
