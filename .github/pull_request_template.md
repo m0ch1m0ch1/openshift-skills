@@ -4,19 +4,14 @@
 
 Fixes # (issue)
 
-## Type of change
-
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Breaking change
-- [ ] Documentation update
-
 ## How has this been tested?
 
 <!-- Describe how you verified the change. -->
 
 ## Checklist
 
+<!-- Remove items that do not apply. -->
+
 - [ ] I have performed a self-review of my changes
 - [ ] I have updated the documentation accordingly
-- [ ] I have added tests that prove my fix or feature works, if applicable
+- [ ] I have added tests that prove my fix or feature works
