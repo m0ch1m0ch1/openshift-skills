@@ -3,7 +3,7 @@
 #
 # 検査:
 #   skills  SKILL.md と README.md があり、name がディレクトリ名と同じで、description に半角スペースが無い
-#   shell   すべての .sh に bash -n と ShellCheck (warning 以上) をかける (ShellCheck が無ければ省く。CI の Linux では必須)
+#   shell   すべての .sh に bash -n と ShellCheck (warning 以上) をかける (ShellCheck が無ければ省く。CI では必須)
 #
 # 終了コード: 0=OK 1=NG
 set -uo pipefail
@@ -38,7 +38,7 @@ for f in $SH; do bash -n "$f" 2>/dev/null || { ng "$f: bash の構文エラー";
 if command -v shellcheck >/dev/null 2>&1; then
   # shellcheck disable=SC2086  # ファイル名に空白は無い
   if shellcheck -S warning $SH; then ok "ShellCheck"; else ng "ShellCheck の指摘があります"; fi
-elif [ "${CI:-}" = true ] && [ "${RUNNER_OS:-}" = Linux ]; then ng "ShellCheck がありません"
+elif [ "${CI:-}" = true ]; then ng "ShellCheck がありません"
 else echo "[SKIP] ShellCheck がありません (入れると検査します)"; fi
 
 echo
