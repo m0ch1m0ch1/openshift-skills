@@ -12,7 +12,8 @@
 #                                            must-gather/ の外 (ケースのディレクトリの直下) に置かれていれば、must-gather/ に移す
 #                                            アーカイブ (tar.gz / tgz / tar / tar.xz / zip) を置いた場合は、その場で展開し、元のアーカイブを消す
 #                                            ケース名が仮の new-<作成日時> なら、must-gather の取得日時 (日本時間の YYYYMMDD-HHMMSS) に付け直す
-#                                            (展開先の外を指すファイルを含むアーカイブは展開しない。外を指すシンボリックリンクを含む must-gather は omc で読まない)
+#                                            (展開先の外を指すファイルを含むアーカイブや、一覧できないアーカイブは展開しない。
+#                                             外を指すシンボリックリンクがあれば、続きのアーカイブを展開せず、omc でも読まない)
 #   mg.sh plan     <case>                    確認事項のファイル (checklist.md: 事象、確認事項、調査項目) のひな形を作る
 #   mg.sh items    <case>                    checklist.md の確認事項と調査項目を、進み具合 (調べ済みの数) と一緒に表示する
 #   mg.sh overview <case>                    異常の概要 (ClusterVersion と最近のアップデート、ClusterOperator、ノード、Pod、MCP、アラート、Warning イベント)。調査の起点を探すために使う
@@ -90,18 +91,19 @@ inside() {
 ok_file() { case "/$1/" in //*|*/../*) return 1;; esac; [ -f "$R/$1" ] && [ ! -L "$R/$1" ] && inside "$R/$1"; }
 need_file() { ok_file "$1" || die "$1 がありません (must-gather のルートからの相対パスで指定する。.. やシンボリックリンク、ルートの外を指すものは読まない)"; }
 need_omc() { command -v omc >/dev/null 2>&1 || { echo "[NG] omc がありません"; echo "次: mg.sh check"; exit 10; }; }
-# no_outside_links: omc はシンボリックリンクを辿って読むため、must-gather/ の中に、絶対パスか .. を指すシンボリックリンクがあれば使わない
+# no_outside_links <しないこと>: must-gather/ の中に、絶対パスか .. を指すシンボリックリンクがあれば、止める
+#   omc、アーカイブの展開 (tar・unzip)、find はリンクを辿るため、その前に確かめる
 #   (どのリンクも、そのディレクトリの下だけを指していれば、リンクを辿っても must-gather/ の外には出ない)
 no_outside_links() {
   local l t
   while IFS= read -r l; do
     t="$(readlink "$l")"
-    case "/$t/" in //*|*/../*) echo "[NG] must-gather の外を指す可能性のあるシンボリックリンクがあるため、omc では読みません: ${l#"$DIR"/} -> $t"
+    case "/$t/" in //*|*/../*) echo "[NG] must-gather の外を指す可能性のあるシンボリックリンクがあるため、$1: ${l#"$DIR"/} -> $t"
       echo "案内: must-gather を取り直すか、そのシンボリックリンクを消すかをユーザーに聞く"; exit 3;; esac
   done < <(find "$DIR/$SLUG/must-gather" -type l 2>/dev/null)
 }
 # use_mg: omc の対象を、このケースの must-gather にする (omc use は全体の設定なので、毎回選び直す)
-use_mg() { need_root; need_omc; no_outside_links; mkdir -p "$(dirname "$OMCCONFIG")"; omc use "$R" >/dev/null 2>&1 || die "omc use に失敗しました: $R"; }
+use_mg() { need_root; need_omc; no_outside_links "omc では読みません"; mkdir -p "$(dirname "$OMCCONFIG")"; omc use "$R" >/dev/null 2>&1 || die "omc use に失敗しました: $R"; }
 # lim: 標準入力を最大 MAX 行に絞る。見出しの行だけのときは「該当なし」
 lim() {
   awk -v max="$MAX" '
@@ -226,7 +228,7 @@ cmd_new() {
 
 # prepare <case>: ケースの must-gather/ に置いたものを使う。アーカイブはその場で展開する
 cmd_prepare() {
-  local c="$DIR/$SLUG/must-gather" a d
+  local c="$DIR/$SLUG/must-gather" a d lst
   [ -d "$c" ] || die "$c がありません (先に mg.sh new)"
   # 展開済みの must-gather が無ければ、置かれたアーカイブを展開する
   if ! root "$SLUG" >/dev/null; then
@@ -241,11 +243,20 @@ cmd_prepare() {
     done
     while IFS= read -r a; do
       echo "展開します: ${a#$c/}"
+      # 前に展開したアーカイブ (や置かれたディレクトリ) に外を指すリンクがあると、tar や unzip がそのリンクを通って外に書くため、
+      # 1 つ展開するごとに確かめる (1 つのアーカイブの中では、tar と unzip がリンクを通った書き込みを防ぐ)
+      no_outside_links "アーカイブを展開しません"
       # 中のファイルが、絶対パスや .. で展開先 (ケースのディレクトリ) の外を指していれば、展開しない
-      case "$a" in
-        *.zip) unzip -Z1 "$a" ;;
-        *)     tar tf "$a" ;;
-      esac 2>/dev/null | has -E '^/|(^|/)\.\.(/|$)' && die "展開先の外を指すファイルが含まれるため、展開しません: $a"
+      #   一覧はファイルに受ける (パイプにすると、pipefail のもとで一覧のコマンドの失敗が判定を打ち消す)。一覧できなければ展開しない
+      lst="$(mktemp "$DIR/$SLUG/.archive-list.XXXXXX")" || die "一時ファイルを作れません: $DIR/$SLUG"
+      if ! case "$a" in
+             *.zip) unzip -Z1 "$a" ;;
+             *)     tar tf "$a" ;;
+           esac > "$lst" 2>/dev/null; then
+        rm -f "$lst"; die "アーカイブの中身を一覧できません (壊れているか、形式が違う): $a"
+      fi
+      if has -E '^/|(^|/)\.\.(/|$)' < "$lst"; then rm -f "$lst"; die "展開先の外を指すファイルが含まれるため、展開しません: $a"; fi
+      rm -f "$lst"
       # 途中で止まった展開をやり直すときに、残ったファイルを上書きする (tar と同じ。unzip は聞いてきて、入力が無いと失敗する)
       case "$a" in
         *.tar.gz|*.tgz) tar xzf "$a" -C "$c" || die "展開できません: $a";;
@@ -548,6 +559,8 @@ term_msg() {
 cmd_ns() {
   local ns="${1:-}" d n p l pod c f
   need_root
+  # Namespace やディレクトリの一覧は、パスの途中のリンク (namespaces/ や pods/ そのもの) を辿るため、先に確かめる
+  no_outside_links "Namespace の一覧を出しません"
   if [ -z "$ns" ]; then
     echo "| Namespace | Pod | ログのあるコンテナ |"
     echo "| --- | --- | --- |"
