@@ -622,12 +622,12 @@ cmd_report() {
 
 # items: checklist.md の確認事項と調査項目を、進み具合 (調べ済みの数) と一緒に表示する
 cmd_items() {
-  local f="$DIR/$SLUG/checklist.md" all done
+  local f="$DIR/$SLUG/checklist.md" all checked
   [ -f "$f" ] || { echo "[NG] 確認事項のファイルがありません: $f"; echo "次: mg.sh plan $SLUG"; exit 3; }
-  all="$(section "$f" 調査項目 | grep -cE '^- \[[ x]\] ')"; done="$(section "$f" 調査項目 | grep -cE '^- \[x\] ')"
+  all="$(section "$f" 調査項目 | grep -cE '^- \[[ x]\] ')"; checked="$(section "$f" 調査項目 | grep -cE '^- \[x\] ')"
   echo "## 確認事項"
   section "$f" 確認事項 | grep -E '^[0-9]+\. ' | lim
-  echo; echo "## 調査項目 (調べ済み: $done / $all)"
+  echo; echo "## 調査項目 (調べ済み: $checked / $all)"
   section "$f" 調査項目 | grep -E '^- \[[ x]\] ' | lim
 }
 

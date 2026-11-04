@@ -44,6 +44,7 @@ title()   { sed -n 's/^# //p' "$1" | head -1; }
 # by_name: パスの一覧をファイル名の順に並べる
 by_name() { awk -F/ '{print $NF "\t" $0}' | LC_ALL=C sort | cut -f2; }   # ロケールによらず同じ順にする
 # steps: ステップのファイル (manifests/NN-name.yaml か scripts/NN-name.sh) を順に出す
+# shellcheck disable=SC2010  # ls の結果は、名前を ^[0-9]{2}-[a-z0-9-]+ に絞ってから使う (空白などを含む名前は通らない)
 steps() {
   { ls manifests 2>/dev/null | grep -E '^[0-9]{2}-[a-z0-9-]+\.yaml$' | sed 's|^|manifests/|'
     ls scripts 2>/dev/null | grep -E '^[0-9]{2}-[a-z0-9-]+\.sh$' | sed 's|^|scripts/|'
@@ -54,6 +55,7 @@ chk()     { echo "scripts/$1.check.sh"; }          # ステップの確認スク
 version() { oc get clusterversion version -o jsonpath='{.status.desired.version}' --request-timeout=10s 2>/dev/null; }
 minor()   { local v; v="$(version)"; v="${v%%-*}"; echo "${v%.*}"; }   # 4.22.18 → 4.22
 # 手順の指紋 (ファイルのコメントを除いた中身と、spec.md の成功条件・パラメータ)。検証後に手順が変わったかを判定する
+# shellcheck disable=SC2010,SC2046  # manifests/ と scripts/ のファイル名は lint で NN-name の形に限っている (空白を含まない)
 fingerprint() {
   local sum="shasum -a 256"; command -v sha256sum >/dev/null 2>&1 && sum=sha256sum   # Linux / macOS
   { cat $(ls manifests/* scripts/* 2>/dev/null | grep -vx scripts/rollback.sh | by_name) scripts/rollback.sh 2>/dev/null | grep -v '^[[:space:]]*#' | sed "s@$KEYDOC@\\1@"
@@ -187,7 +189,7 @@ cmd_new() {
 }
 
 cmd_lint() {
-  local f b img obj cluster d k fail=0
+  local f b img d k fail=0
   ng() { echo "[NG] $*"; fail=1; }
   [ -f spec.md ] || ng "spec.md がありません"
   head -1 spec.md 2>/dev/null | grep -q '^# ' || ng "spec.md の 1 行目に '# タイトル' が必要"
@@ -240,7 +242,7 @@ cmd_lint() {
     esac
     case "$f" in
       scripts/rollback.sh) ;;
-      manifests/*.sh|scripts/*.yaml|scripts/*.yml|manifests/*.check.sh) ng "$f: YAML は manifests/、スクリプトは scripts/ に置く";;
+      manifests/*.sh|scripts/*.yaml|scripts/*.yml) ng "$f: YAML は manifests/、スクリプトは scripts/ に置く";;
       scripts/*.check.sh)
         b="$(basename "$f" .check.sh)"; [ -f "manifests/$b.yaml" ] || [ -f "scripts/$b.sh" ] || ng "$f: 対応するステップがありません"
         [ -n "$(title "$f")" ] || ng "$f: 先頭に '# 確認する状態' のコメントが必要"
