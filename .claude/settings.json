@@ -39,8 +39,16 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:kubernetes.io)",
+      "Bash(bash .claude/skills/rhkcs-mcp-setup/scripts/rhkcs.sh check:*)",
+      "Bash(bash .claude/skills/rhkcs-mcp-setup/scripts/rhkcs.sh test:*)",
+      "Bash(bash .claude/skills/rhkcs-mcp-setup/scripts/rhkcs.sh update:*)",
+      "mcp__rhkcs__search_kcs",
+      "mcp__rhkcs__get_kcs",
       "Edit(runbooks/**)",
       "Edit(must-gather-analyses/**)"
+    ],
+    "deny": [
+      "Read(./.rhkcs/token)"
     ]
   }
 }

@@ -1,7 +1,7 @@
 ---
 name: openshift-runbook
 description: OpenShiftに設定を適用する手順書を作り、接続中のクラスタで適用から切り戻しまで試して検証する。
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, WebFetch
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, WebFetch, ToolSearch, mcp__rhkcs__search_kcs, mcp__rhkcs__get_kcs
 argument-hint: "[適用したい設定]"
 ---
 
@@ -34,15 +34,18 @@ AskUserQuestion で確認し、回答なしに進めない。既に得た承認�
 
 ## 3. 手順の作成
 1. **公式ドキュメント**: `cluster` が表示したバージョンのドキュメントを WebFetch で読み、該当する章の Procedure と Verification を確かめる（本文が出なければ `offset` で続きを読む）。記憶や別バージョンの知識だけで書かない。OpenShift のドキュメントに無いもの（Red Hat 以外の Operator など）は提供元の該当バージョンを読み、どちらも無ければユーザーに伝える。クラスタは読み取りなら調べてよい。
-2. **成功条件 (DoD)**: `bash $T new <name>` でひな形を作り（手順名は英小文字・数字・ハイフン。既にある名前は使えない）、spec.md の `## 成功条件 (DoD)` にチェックリストを書いて合意を得る。
+2. **既知の問題**: Red Hat ナレッジベースの MCP（`mcp__rhkcs__search_kcs` と `mcp__rhkcs__get_kcs`）が使えるかを確かめる。ツールの一覧に無ければ ToolSearch で `rhkcs` を探す（Claude Code が、rhkcs は無効・使えないと知らせていれば、探さずに使えないとする）。
+   - 使えれば、機能名とバージョンで探して読み、このバージョンの不具合・前提条件・時間がかかる理由があれば、成功条件・待つ時間・注記に反映する（書き方は writing-guide の「コメント」）。手順は公式ドキュメントに従い、記事の手順やコマンドはそのまま使わない（コマンドは空白が抜けている）。
+   - 使えなければ「`/rhkcs-mcp-setup` で導入すると、ナレッジベースで既知の問題も確かめられる」と 1 行伝え、使わずに進める（聞かない）。
+3. **成功条件 (DoD)**: `bash $T new <name>` でひな形を作り（手順名は英小文字・数字・ハイフン。既にある名前は使えない）、spec.md の `## 成功条件 (DoD)` にチェックリストを書いて合意を得る。
    ```
    - [ ] Route の URL に HTTPS でアクセスすると HTTP 200 が返る。（確認: 04-route）
    ```
    - 各項目は、完了したときにユーザーが観測できる状態にする。起動・リソース作成・目的の機能が使えることを区別し、検証を通すために緩めない。判断できない重要な点だけ聞く。
    - `（確認: NN-name）` は、その状態を確かめる check.sh のステップ。ステップの構成も、ここで決まる。
    - チェックは付けない。検証で確認できた項目に、検証結果と runbook.md で [x] が付く。
-3. **ファイル**: [references/writing-guide.md](references/writing-guide.md) に従って、spec.md の残りとステップを書く。各成功条件は、指定したステップの check.sh で確かめる。
-4. **lint**: `bash $T lint <name>` を、`[NG]` と `[WARN]` が無くなるまで直す。成功条件を変えた場合は、もう一度合意を得る。
+4. **ファイル**: [references/writing-guide.md](references/writing-guide.md) に従って、spec.md の残りとステップを書く。各成功条件は、指定したステップの check.sh で確かめる。
+5. **lint**: `bash $T lint <name>` を、`[NG]` と `[WARN]` が無くなるまで直す。成功条件を変えた場合は、もう一度合意を得る。
 
 ## 4. 検証
 1. `bash $T plan <name>` の出力（成功条件、パラメータ、適用するもの、既に存在するもの）をそのまま示し、「ユーザーに確認すること」の「4. 検証の前」を確認する。
@@ -53,7 +56,7 @@ AskUserQuestion で確認し、回答なしに進めない。既に得た承認�
 3. 終了コードが 0 以外の場合は、`次:` に従う。
    - 3（開始できない）: 何も変更していない。接続・lint・既存リソースのどれが原因かを伝える。
    - 1（手順の失敗）、2（切り戻しかクリーンアップの問題）、130（中断）:
-     1. `次:` のログと読み取りだけの調査（`oc get` / `describe` / `logs` / `events`）で原因を特定する。
+     1. `次:` のログと読み取りだけの調査（`oc get` / `describe` / `logs` / `events`）で原因を特定する。3.2 で MCP が使えれば、エラーメッセージ（クラスタ名・ホスト名・IP アドレスを除いた部分）でナレッジベースも探し、既知の問題かを確かめる。
      2. リソースが残っていれば、ファイルを直す前に `bash $T plan <name>` で削除・切り戻しするものを示し、確認してから `bash $T cleanup <name>` を実行する（YAML は適用したときの内容で削除される）。ただし rollback.sh の不具合で切り戻せない場合は、rollback.sh だけを先に直してから cleanup する。
         - 接続先（クラスタまたはプロジェクト）が検証したときと違う場合、cleanup は何もせずに終える。`案内:` に従い、切り替え（`! oc config use-context …` / `! oc project …`）を依頼する。
         - rollback.sh が「この手順で作成していないリソースがある」と止まった場合（検証中も同じ。そのときは YAML も削除されない）は、何が残っているかを伝え、どうするかを聞く。
