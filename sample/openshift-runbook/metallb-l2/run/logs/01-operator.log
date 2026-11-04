@@ -9,4 +9,4 @@ Name                                    Phase
 metallb-operator.v4.22.0-202610271454   Succeeded
 --- check:3
 NAME            CSV                                     APPROVAL    APPROVED
-install-8x46f   metallb-operator.v4.22.0-202610271454   Automatic   true
+install-c5chw   metallb-operator.v4.22.0-202610271454   Automatic   true
