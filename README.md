@@ -32,7 +32,7 @@ macOS または Linux で、このリポジトリをクローンし、ルート�
 ├── .claude/
 │   ├── settings.json         # 共有の設定（下を参照）
 │   └── skills/<skill-name>/  # 各スキル（SKILL.md と README.md など）
-├── .github/                  # CI（workflows/）、Issue と PR のテンプレート
+├── .github/                  # CI（workflows/ と、検査の scripts/check.sh）、Issue と PR のテンプレート
 ├── .mcp.json                 # MCP サーバーの登録（下を参照）
 ├── CLAUDE.md                 # このリポジトリで作業するときの Claude Code への指示
 ├── sample/                   # スキルが作るものの例
@@ -46,11 +46,15 @@ macOS または Linux で、このリポジトリをクローンし、ルート�
 共有の設定:
 
 - `.claude/settings.json`
-  - クラスタを変更しない操作（各スキルの確認系のコマンド、`oc`・`omc` の読み取り、ナレッジベースの MCP のツール）は、確認なしで実行できます。クラスタを変更する操作は、毎回承認を求めます。
+  - クラスタを変更しない操作（各スキルの確認系のコマンド、`oc`・`omc` の読み取り、公式ドキュメントなどの参照、ナレッジベースの MCP のツール）は、確認なしで実行できます。クラスタを変更する操作は、毎回承認を求めます。
   - omc の設定ファイルをリポジトリの中に置きます。
   - `.rhkcs/token` を Read ツールで読めないようにしています（Bash では防げないため、スキルの決まりでも禁止しています）。
-  - スキルを、このリポジトリの `.claude/skills/` に置いて使う前提で書いています。
+  - 許可は、スキルをこのリポジトリの `.claude/skills/` に置き、リポジトリのルートから実行する前提で書いています。
 - `.mcp.json`: ナレッジベースの MCP サーバー（rhkcs）を登録しています（token は書いていません）。初めて使うときに、Claude Code が承認を求めます。導入していない場合は、`/mcp` で無効にできます。
+
+## 検査
+
+`bash .github/scripts/check.sh` で、CI と同じ検査（SKILL.md と README.md の形、シェルスクリプトの構文と ShellCheck）を手元で実行できます。
 
 ## ライセンス
 

@@ -37,7 +37,7 @@ openshift-runbook/
 ├── SKILL.md                      # 進め方
 ├── references/writing-guide.md   # 手順ファイルの書き方（lint で判定できないこと）
 ├── templates/                    # 新しい手順のひな形
-└── scripts/runbook.sh            # 処理の本体（スキルが内部で使う。ひな形・lint・適用内容の表示・検証・手順書の生成）
+└── scripts/runbook.sh            # 処理の本体（スキルが内部で使う。クラスタの確認・ひな形・lint・適用内容の表示・検証・クリーンアップ・手順書の生成）
 ```
 
 作成した手順は、Git リポジトリのルートの `runbooks/<name>/` に置かれます（環境変数 `RUNBOOK_DIR` で変えられます）。

@@ -5,6 +5,7 @@
 #
 # 使い方:
 #   runbook.sh cluster                  接続先のクラスタを確認する (読み取りのみ)。公式ドキュメントの URL も表示する
+#                                       終了コード: 0=OK 10=oc が無い 20=未ログイン/認証切れ 30=接続できない
 #   runbook.sh new     <name>           ひな形から手順のディレクトリを作る
 #   runbook.sh lint    <name>           静的チェック (クラスタは変更しない)
 #   runbook.sh plan    <name>           成功条件、パラメータ、適用するリソース、既に存在するもの、前回から残っているものを表示する (読み取りのみ)
@@ -15,8 +16,8 @@
 #                                       --keep:    作成したリソースを残す (rollback.sh は検証されない)
 #   runbook.sh cleanup <name>           検証で残ったリソースを元に戻す (rollback.sh を実行し、適用した YAML を削除する)
 #                                       終了コード: 0=完了 1=削除できない/確認できない 3=開始できない (接続先が検証したときと違うなど)
-#   (plan は、[NG] があると 1 を返す。そのほかのコマンドの引数の誤りは 3)
 #   runbook.sh doc     <name>           runbook.md を作り直す (run の最後にも実行される。クラスタに接続しない)
+#   (lint と plan は、[NG] があると 1 を返す。どのコマンドも、引数の誤りは 3)
 #
 # 環境変数:
 #   RUNBOOK_DIR      手順を置くディレクトリ (既定: Git リポジトリのルートの runbooks/。Git の外ならカレントディレクトリの runbooks/)
@@ -38,6 +39,8 @@ SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # --- 共通 ---
 die()     { echo "[NG] $*"; exit 3; }   # 開始できない (何も変更していない)
+# has <grep の引数>: 標準入力に一致する行があるか。pipefail のもとで grep -q は偽になることがあるため、入力を最後まで読む
+has()     { grep "$@" >/dev/null; }
 title()   { sed -n 's/^# //p' "$1" | head -1; }
 # 手順のファイル構成: manifests/NN-name.yaml (oc apply する YAML)、scripts/NN-name.sh (YAML で書けない作業)、
 # scripts/NN-name.check.sh (各ステップの確認)。ステップの順番は NN で決まる
@@ -192,7 +195,7 @@ cmd_lint() {
   local f b img d k fail=0
   ng() { echo "[NG] $*"; fail=1; }
   [ -f spec.md ] || ng "spec.md がありません"
-  head -1 spec.md 2>/dev/null | grep -q '^# ' || ng "spec.md の 1 行目に '# タイトル' が必要"
+  head -1 spec.md 2>/dev/null | has '^# ' || ng "spec.md の 1 行目に '# タイトル' が必要"
   grep -qx '## 前提条件' spec.md 2>/dev/null || echo "[WARN] spec.md に '## 前提条件' がありません"
   grep '^## ' spec.md 2>/dev/null | grep -vxE '## (成功条件 \(DoD\)|前提条件|パラメータ|関連情報)' | sed "s|^|[WARN] spec.md: 想定外の節です (手順に関わる補足はステップの '# 注記:' に書く): |"
   # 成功条件 (DoD): チェックリストの各項目に、それを確かめる check.sh のステップを付ける
@@ -210,7 +213,7 @@ cmd_lint() {
   # YAML は、クラスタと同じバージョンの公式ドキュメントを確認して作る。確認した章を関連情報に載せる
   #   (OpenShift のドキュメントに載っていないもの (Red Hat 以外の Operator など) は、提供元のドキュメントへのリンクでよい)
   local ver; ver="${OCP_VERSION:-$(minor)}"
-  if ! spec_section 関連情報 2>/dev/null | grep -qE 'https?://'; then
+  if ! spec_section 関連情報 2>/dev/null | has -E 'https?://'; then
     echo "[WARN] spec.md の '## 関連情報' に、読んだドキュメントへのリンクがありません"
   elif [ -n "$ver" ] && grep -q 'docs\.redhat\.com/[a-z-]*/documentation/openshift_container_platform/' spec.md 2>/dev/null &&
        ! grep -q "docs\.redhat\.com/[a-z-]*/documentation/openshift_container_platform/$ver/" spec.md 2>/dev/null; then
@@ -252,7 +255,7 @@ cmd_lint() {
         grep -n 'oc get.*|[[:space:]]*grep -q' "$f" | sed "s|^|[WARN] $f: oc get の出力を変数に入れてから判定する: |";;
       manifests/*.yaml|scripts/*.sh)
         b="$(sid "$f")"
-        basename "$f" | grep -qE '^[0-9]{2}-[a-z0-9-]+\.(yaml|sh)$' || ng "$f: 名前は NN-name.yaml / NN-name.sh"
+        basename "$f" | has -E '^[0-9]{2}-[a-z0-9-]+\.(yaml|sh)$' || ng "$f: 名前は NN-name.yaml / NN-name.sh"
         [ -f "manifests/$b.yaml" ] && [ -f "scripts/$b.sh" ] && ng "$b: manifests/$b.yaml と scripts/$b.sh はどちらか一方にする"
         [ -f "$(chk "$b")" ] || ng "$f: $(chk "$b") がありません"
         [ -n "$(title "$f")" ] || ng "$f: 先頭に '# 作業名' のコメントが必要"
@@ -362,15 +365,17 @@ run_step() {
 
 # diagnose: 適用した YAML の Namespace について、リソース・イベント・Pod ログを出力する (rollback で消える前に記録する)
 diagnose() {
-  local f ns p
+  local f ns p out
   for ns in $(for f in $(cat run/applied.txt 2>/dev/null); do
       oc label --local -f "$f" x=y -o go-template='{{if eq .kind "Namespace"}}{{.metadata.name}}{{else}}{{with .metadata.namespace}}{{.}}{{end}}{{end}}{{"\n"}}'
     done | grep -v '^$' | sort -u); do
     echo "=== 診断: namespace $ns"
     oc -n "$ns" get all -o wide 2>/dev/null
     echo "--- events"; oc -n "$ns" get events --sort-by=.lastTimestamp | tail -20
-    oc -n "$ns" get subscription,csv,installplan 2>/dev/null && echo "--- subscription の状態" &&
-      oc -n "$ns" get subscription -o jsonpath='{range .items[*]}{.metadata.name}: {range .status.conditions[*]}{.type}={.status} {.message}; {end}{"\n"}{end}' 2>/dev/null
+    # Operator のリソースがあるときだけ、見出しを付けて出す
+    out="$(oc -n "$ns" get subscription,csv,installplan 2>/dev/null)"
+    [ -z "$out" ] || { echo "--- subscription / csv / installplan"; printf '%s\n' "$out"; echo "--- subscription の状態"
+      oc -n "$ns" get subscription -o jsonpath='{range .items[*]}{.metadata.name}: {range .status.conditions[*]}{.type}={.status} {.message}; {end}{"\n"}{end}' 2>/dev/null; }
     for p in $(oc -n "$ns" get pods -o name); do echo "--- logs $p"; oc -n "$ns" logs "$p" --all-containers --tail=20; done
   done
 }

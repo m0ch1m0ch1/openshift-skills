@@ -12,9 +12,10 @@
 #                                            must-gather/ の外 (ケースのディレクトリの直下) に置かれていれば、must-gather/ に移す
 #                                            アーカイブ (tar.gz / tgz / tar / tar.xz / zip) を置いた場合は、その場で展開し、元のアーカイブを消す
 #                                            ケース名が仮の new-<作成日時> なら、must-gather の取得日時 (日本時間の YYYYMMDD-HHMMSS) に付け直す
+#                                            (展開先の外を指すファイルを含むアーカイブは展開しない。外を指すシンボリックリンクを含む must-gather は omc で読まない)
 #   mg.sh plan     <case>                    確認事項のファイル (checklist.md: 事象、確認事項、調査項目) のひな形を作る
 #   mg.sh items    <case>                    checklist.md の確認事項と調査項目を、進み具合 (調べ済みの数) と一緒に表示する
-#   mg.sh overview <case>                   異常の概要 (ClusterVersion と最近のアップデート、ClusterOperator、ノード、Pod、MCP、アラート、Warning イベント)。調査の起点を探すために使う
+#   mg.sh overview <case>                    異常の概要 (ClusterVersion と最近のアップデート、ClusterOperator、ノード、Pod、MCP、アラート、Warning イベント)。調査の起点を探すために使う
 #   mg.sh ns       <case> [<ns>]             Namespace について、must-gather に含まれるリソースと、Pod のログの有無・期間を表示する
 #                                            (引数が無ければ、OpenShift 以外の Namespace の一覧と、Pod・ログの数)
 #   mg.sh cond     <case> <file>             リソースの status.conditions を、条件ごとに 1 行で行番号付きで表示する (ClusterOperator、ノード、MCP など)
@@ -37,7 +38,7 @@
 #   (終了コード: 0=OK 1=lint などの NG 3=開始できない 10=omc が無い)
 #
 # 環境変数:
-#   ANALYSIS_DIR  調査 (ケース) を置くディレクトリ (既定: Git リポジトリのルートの must-gather-analyses/)
+#   ANALYSIS_DIR  調査 (ケース) を置くディレクトリ (既定: リポジトリのルートの must-gather-analyses/。ルートはスクリプトの場所から決める)
 #   MG_MAX        各サブコマンドが表示する最大行数 (既定: 50)
 #   OMCCONFIG     omc の設定ファイル (どの must-gather を使うか)。既定: must-gather-analyses/.omc/omc.json (~/.omc の代わり)
 #
@@ -89,8 +90,18 @@ inside() {
 ok_file() { case "/$1/" in //*|*/../*) return 1;; esac; [ -f "$R/$1" ] && [ ! -L "$R/$1" ] && inside "$R/$1"; }
 need_file() { ok_file "$1" || die "$1 がありません (must-gather のルートからの相対パスで指定する。.. やシンボリックリンク、ルートの外を指すものは読まない)"; }
 need_omc() { command -v omc >/dev/null 2>&1 || { echo "[NG] omc がありません"; echo "次: mg.sh check"; exit 10; }; }
+# no_outside_links: omc はシンボリックリンクを辿って読むため、must-gather/ の中に、絶対パスか .. を指すシンボリックリンクがあれば使わない
+#   (どのリンクも、そのディレクトリの下だけを指していれば、リンクを辿っても must-gather/ の外には出ない)
+no_outside_links() {
+  local l t
+  while IFS= read -r l; do
+    t="$(readlink "$l")"
+    case "/$t/" in //*|*/../*) echo "[NG] must-gather の外を指す可能性のあるシンボリックリンクがあるため、omc では読みません: ${l#"$DIR"/} -> $t"
+      echo "案内: must-gather を取り直すか、そのシンボリックリンクを消すかをユーザーに聞く"; exit 3;; esac
+  done < <(find "$DIR/$SLUG/must-gather" -type l 2>/dev/null)
+}
 # use_mg: omc の対象を、このケースの must-gather にする (omc use は全体の設定なので、毎回選び直す)
-use_mg() { need_root; need_omc; mkdir -p "$(dirname "$OMCCONFIG")"; omc use "$R" >/dev/null 2>&1 || die "omc use に失敗しました: $R"; }
+use_mg() { need_root; need_omc; no_outside_links; mkdir -p "$(dirname "$OMCCONFIG")"; omc use "$R" >/dev/null 2>&1 || die "omc use に失敗しました: $R"; }
 # lim: 標準入力を最大 MAX 行に絞る。見出しの行だけのときは「該当なし」
 lim() {
   awk -v max="$MAX" '
@@ -235,11 +246,12 @@ cmd_prepare() {
         *.zip) unzip -Z1 "$a" ;;
         *)     tar tf "$a" ;;
       esac 2>/dev/null | has -E '^/|(^|/)\.\.(/|$)' && die "展開先の外を指すファイルが含まれるため、展開しません: $a"
+      # 途中で止まった展開をやり直すときに、残ったファイルを上書きする (tar と同じ。unzip は聞いてきて、入力が無いと失敗する)
       case "$a" in
         *.tar.gz|*.tgz) tar xzf "$a" -C "$c" || die "展開できません: $a";;
         *.tar.xz)       tar xJf "$a" -C "$c" || die "展開できません: $a";;
         *.tar)          tar xf  "$a" -C "$c" || die "展開できません: $a";;
-        *.zip)          unzip -q "$a" -d "$c" || die "展開できません: $a";;
+        *.zip)          unzip -oq "$a" -d "$c" || die "展開できません: $a";;
       esac
       rm -f "$a" && echo "元のアーカイブを消しました: ${a#$c/}"
     done < <(find "$c" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tgz' -o -name '*.tar.xz' -o -name '*.tar' -o -name '*.zip' \) | LC_ALL=C sort)
@@ -542,6 +554,7 @@ cmd_ns() {
     for d in "$R"/namespaces/*/; do
       n="$(basename "$d")"
       case "$n" in openshift|openshift-*|kube-*|default) continue;; esac
+      [ ! -L "${d%/}" ] || continue   # シンボリックリンクの先 (must-gather の外かもしれない) は数えない
       p="$(find "$d/pods" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | grep -c .)"
       l="$(find "$d/pods" -name current.log -size +0 2>/dev/null | grep -c .)"
       echo "| $n | $p | $l |"
