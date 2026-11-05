@@ -1,7 +1,7 @@
 ---
 name: rhkcs-mcp-setup
 description: ナレッジベース（KCS）を検索するMCPサーバー（rhkcs-mcp）を、このリポジトリで使えるように導入し、設定する。
-allowed-tools: Read, Edit, Bash, AskUserQuestion, ToolSearch, mcp__rhkcs__search_kcs, mcp__rhkcs__get_kcs
+allowed-tools: Read, AskUserQuestion, ToolSearch, mcp__rhkcs__search_kcs, mcp__rhkcs__get_kcs
 ---
 
 # rhkcs-mcp-setup
@@ -59,4 +59,6 @@ token が無い場合は、次を依頼して待つ。
 - token を表示しない、読まない、会話に書かせない。`.rhkcs/token` を Read や cat で開かない。
 - Go などのツールのインストールは自分でせず、ユーザーに依頼する。
 - `go` コマンドを直接実行しない（テレメトリなどを `~` に書くため）。Go は、スクリプトの中で（キャッシュと HOME を `.rhkcs/` にして）だけ実行する。
+- token の権限を直す場合は `T permissions` を使う。内容は読まず、600 にするだけである。
+- コマンドの許可は共有の `.claude/settings.json` に従う。スキルの frontmatter で Bash 全体を許可しない。
 - 固定したコミット（`PIN`）は、5 の手順で、ユーザーの了承を得てからだけ変える。

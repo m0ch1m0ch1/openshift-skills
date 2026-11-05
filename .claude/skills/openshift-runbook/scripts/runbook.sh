@@ -3,6 +3,11 @@
 #
 # openshift-runbook スキルが、次の順で使う (cluster → new → lint → plan → run。失敗してやり直すときは cleanup)
 #
+# 手順書はコマンドと出力例を示す。manifests/ と scripts/ (rollback.sh を含む) を手順書と同じディレクトリに先に置き、そこで実行する。
+# 最初に全 YAML の既存リソースを確認する。no matches for kind / resource mapping not found (CRD 未登録) は未存在として続行し、それ以外の確認エラーは中止する。
+# 切り戻しは bash scripts/rollback.sh → YAML の逆順削除で行う。
+# コメントだけの変更では再検証せず doc で作り直せる。
+#
 # 使い方:
 #   runbook.sh cluster                  接続先のクラスタを確認する (読み取りのみ)。公式ドキュメントの URL も表示する
 #                                       終了コード: 0=OK 10=oc が無い 20=未ログイン/認証切れ 30=接続できない
@@ -22,28 +27,107 @@
 #   (lint と plan は、[NG] があると 1 を返す。どのコマンドも、引数の誤りは 3)
 #
 # 環境変数:
-#   RUNBOOK_DIR      手順を置くディレクトリ (既定: Git リポジトリのルートの runbooks/。Git の外ならカレントディレクトリの runbooks/)
+#   RUNBOOK_DIR      手順を置くディレクトリ (既定: Git リポジトリのルートの runbooks/。指定先はリポジトリ内に限る)
+#                    相対パスは実行時のカレントディレクトリを基準にする。
 #   RUNBOOK_TIMEOUT  削除を待つ時間の上限 (既定: 300s)
+#   一時ファイルと kubeconfig は runbooks/.runtime/ に作り、終了時に削除する (適用一覧の更新用は run/ に作る)。
 #   OCP_VERSION      lint で確認するドキュメントのバージョン (既定: 接続中のクラスタのバージョン)
 #
 # 検証の記録 (<RUNBOOK_DIR>/<name>/run/):
 #   result.md    検証結果。1 行目のコメントに result / date / version / fp / keep / rb (切り戻し) / ra (再適用) を持つ
 #                (中断したときは result=INTERRUPTED と、中断した段階 phase=step|rollback|reapply)
 #   applied.txt  適用した YAML (run/applied/ に保存した、適用したときの内容)。cleanup で逆順に削除する
+#                削除確認済みの YAML は一覧から順に外す。中断後は残りから再開する。
 #   server       検証した API サーバーとプロジェクト。cleanup は同じクラスタ・プロジェクトでしか実行しない
 #   touched      .sh ステップを実行した (rollback.sh で戻すものがある)
 #   pending      クラスタにリソースが残っている可能性がある。ステップの実行前に作り、元に戻せたら消す
 #   logs/        ステップ・rollback・cleanup のログ (--keep の再適用は logs/reapply/)
 set -uo pipefail
 TIMEOUT="${RUNBOOK_TIMEOUT:-300s}"
-# 手順の置き場所: 既定は Git リポジトリのルート (Git の外ならカレントディレクトリ) の runbooks/。作業中にカレントディレクトリが変わっても同じ場所を使う
-DIR="${RUNBOOK_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)/runbooks}"
+# 手順の置き場所: 既定は Git リポジトリのルートの runbooks/。作業中にカレントディレクトリが変わっても同じ場所を使う
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo '[NG] Git リポジトリ内で実行してください'; exit 3; }
+DIR="${RUNBOOK_DIR:-$ROOT/runbooks}"
+case "$DIR" in /*) ;; *) DIR="$PWD/$DIR";; esac
+# 表記だけを整える。.. は解決せず、シンボリックリンクとともに safe_path で拒否する。
+DIR="$DIR/"
+while [[ $DIR == *//* ]]; do DIR=${DIR//\/\//\/}; done
+while [[ $DIR == */./* ]]; do DIR=${DIR//\/.\//\/}; done
+[ "$DIR" = / ] || DIR=${DIR%/}
 SKILL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 # --- 共通 ---
 die()     { echo "[NG] $*"; exit 3; }   # 開始できない (何も変更していない)
-# has <grep の引数>: 標準入力に一致する行があるか。pipefail のもとで grep -q は偽になることがあるため、入力を最後まで読む
-has()     { grep "$@" >/dev/null; }
+# has <grep -E の引数>: 標準入力に一致する行があるか。pipefail のもとで grep -E -q は偽になることがあるため、入力を最後まで読む
+has()     { grep -E "$@" >/dev/null; }
+
+# リポジトリ内の通常のパスだけを許可する。リンクは内部向けも含め拒否する。
+safe_path() {
+  local path=$1 part walk="$ROOT"
+  case "$path" in "$ROOT"/*) path=${path#"$ROOT"/};; *) echo '[NG] リポジトリ外のパスです' >&2; return 1;; esac
+  case "/$path/" in */../*|*/./*|*//*) echo '[NG] 不正なパスです' >&2; return 1;; esac
+  while [ -n "$path" ]; do
+    part=${path%%/*}; walk="$walk/$part"
+    [ ! -L "$walk" ] || { echo '[NG] シンボリックリンクは使えません' >&2; return 1; }
+    case "$path" in */*) path=${path#*/};; *) break;; esac
+  done
+}
+safe_tree() {
+  local entry
+  safe_path "$1" || return 1
+  [ ! -e "$1" ] || [ -d "$1" ] || [ -f "$1" ] || { echo "[NG] 通常ファイルではありません" >&2; return 1; }
+  [ ! -d "$1" ] || for entry in "$1"/* "$1"/.[!.]* "$1"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    safe_tree "$entry" || return 1
+  done
+}
+validate_records() {
+  local f
+  for f in run/server run/pending run/touched run/result.md; do
+    [ ! -e "$f" ] || [ -f "$f" ] || { echo "[NG] 実行記録が通常ファイルではありません"; return 1; }
+  done
+  [ ! -e run/applied.txt ] || [ -f run/applied.txt ] || { echo '[NG] 適用記録が通常ファイルではありません'; return 1; }
+  [ -f run/applied.txt ] || return 0
+  while IFS= read -r f || [ -n "$f" ]; do
+    printf '%s\n' "$f" | has '^run/applied/[0-9]{2}-[a-z0-9-]+\.yaml$' || { echo '[NG] 適用記録のパスが不正です'; return 1; }
+    safe_path "$PWD/$f" && [ -f "$f" ] && [ -r "$f" ] || { echo '[NG] 保存した YAML を読めません'; return 1; }
+  done < run/applied.txt
+}
+# 削除対象を検査してから、通常ファイルと空ディレクトリを順に削除する。
+remove_tree() {
+  local entry
+  safe_tree "$1" || return 1
+  [ -e "$1" ] || return 0
+  if [ -d "$1" ]; then
+    for entry in "$1"/* "$1"/.[!.]* "$1"/..?*; do
+      [ -e "$entry" ] || continue
+      remove_tree "$entry" || return 1
+    done
+    rmdir "$1"
+  else rm -f "$1"; fi
+}
+WORK=""
+init_work() {
+  [ -z "$WORK" ] || return 0
+  safe_path "$ROOT/runbooks/.runtime" || return 1
+  mkdir -p "$ROOT/runbooks/.runtime" || return 1
+  WORK="$(mktemp -d "$ROOT/runbooks/.runtime/session.XXXXXX")" || return 1
+  chmod 700 "$WORK" || return 1
+  export TMPDIR="$WORK" WORK
+}
+
+# プロセス置換の生成失敗を成功と誤認しないよう、保存と構文検査を先に行う。
+execute_script() {
+  local f=$1 tag=$2 tmp rc
+  safe_path "$PWD/$f" && [ -f "$f" ] && [ -r "$f" ] || { echo "[NG] $f を読めません"; return 1; }
+  init_work || return 1
+  tmp="$(mktemp "$WORK/script.XXXXXX")" || return 1
+  if ! instrument "$f" "$tag" > "$tmp" || ! bash -n "$tmp" || ! grep -E -x 'set -euo pipefail' "$tmp" >/dev/null; then
+    echo "[NG] $f の実行準備に失敗しました"; rm -f "$tmp"; return 1
+  fi
+  bash "$tmp"; rc=$?
+  rm -f "$tmp"
+  return "$rc"
+}
 title()   { sed -n 's/^# //p' "$1" | head -1; }
 # 手順のファイル構成: manifests/NN-name.yaml (oc apply する YAML)、scripts/NN-name.sh (YAML で書けない作業)、
 # scripts/NN-name.check.sh (各ステップの確認)。ステップの順番は NN で決まる
@@ -64,11 +148,11 @@ minor()   { local v; v="$(version)"; v="${v%%-*}"; echo "${v%.*}"; }   # 4.22.18
 # shellcheck disable=SC2010,SC2046  # manifests/ と scripts/ のファイル名は lint で NN-name の形に限っている (空白を含まない)
 fingerprint() {
   local sum="shasum -a 256"; command -v sha256sum >/dev/null 2>&1 && sum=sha256sum   # Linux / macOS
-  { cat $(ls manifests/* scripts/* 2>/dev/null | grep -vx scripts/rollback.sh | by_name) scripts/rollback.sh 2>/dev/null | grep -v '^[[:space:]]*#' | sed "s@$KEYDOC@\\1@"
+  { cat $(ls manifests/* scripts/* 2>/dev/null | grep -E -vx scripts/rollback.sh | by_name) scripts/rollback.sh 2>/dev/null | grep -E -v '^[[:space:]]*#' | sed "s@$KEYDOC@\\1@"
     spec_section "成功条件 (DoD)"; spec_section パラメータ
   } | $sum | cut -c1-12
 }
-# YAML のキー行の行末にある説明コメント (" # 説明")。手順書では「ここでは、以下のようになります。」のリストになる
+# YAML のキー行の行末にある説明コメント (" # 説明")。指紋計算で除外し、lint の説明文検査にも使う
 KEYDOC='^\([[:space:]-]*[A-Za-z0-9_./-]\{1,\}:\(.*[^[:space:]]\)\{0,1\}\)[[:space:]]\{1,\}# \([^"'"'"']*\)$'
 # スクリプトのブロック: "set -euo pipefail" より後を空行で区切った単位。手順書では、ブロックごとに
 # 「コマンド → 出力例」を載せる。ブロック先頭の "# 〜する" は、そのブロックの説明になる
@@ -110,7 +194,7 @@ checklist() {
     if [ "$1" = index ]; then
       # 最後のステップの確認は、手順書の「検証」に載る
       if [ "$b" = "$(for f in $(steps); do sid "$f"; done | tail -1)" ]; then ref="検証"
-      else ref="手順 $(for f in $(steps); do sid "$f"; done | grep -nx "$b" | cut -d: -f1)"; fi
+      else ref="手順 $(for f in $(steps); do sid "$f"; done | grep -E -nx "$b" | cut -d: -f1)"; fi
     fi
     case "$st" in OK|NG|SKIP) judged=$((judged + 1));; esac
     if [ "$st" = OK ]; then ok=$((ok + 1)); echo "- [x] ${d}（${ref}）"
@@ -141,20 +225,21 @@ same_target() { [ -s run/server ] && [ "$(cat run/server)" = "$(target)" ]; }
 target_ng() { local r; r="$(cat run/server 2>/dev/null)"; echo "[NG] 検証したときの接続先 (${r:-記録なし}) と、今の接続先 ($(target)) が違います"; echo "案内: 検証したクラスタとプロジェクトに切り替えてから実行する (oc config use-context … / oc project …)"; }
 # pin_kubeconfig: 実行中に接続先が変わらないように、今のコンテキストを一時ファイルに固定する (終了時に消す)
 pin_kubeconfig() {
-  PINNED="$(mktemp "${TMPDIR:-/tmp}/runbook-kubeconfig.XXXXXX")" || return 1
-  chmod 600 "$PINNED"
+  PINNED="$(mktemp "$WORK/kubeconfig.XXXXXX")" || return 1
+  chmod 600 "$PINNED" || return 1
   oc config view --minify --flatten > "$PINNED" 2>/dev/null && [ -s "$PINNED" ] || { echo "[NG] 接続先を固定できません"; return 1; }
   export KUBECONFIG="$PINNED"
 }
-PINNED=""; trap '[ -z "$PINNED" ] || rm -f "$PINNED"' EXIT
+PINNED=""
+trap '[ -z "$WORK" ] || remove_tree "$WORK"' EXIT
 # existing <ファイル>: クラスタに既にあるオブジェクトを出す。確認できないとき (権限・通信) は 2 を返す
 #   (CRD がまだ無い kind のオブジェクトは「無い」とみなす)
 existing() {
   local out err rc
-  err="$(mktemp)"
+  err="$(mktemp "$WORK/error.XXXXXX")" || return 2
   out="$(oc get -f "$1" --ignore-not-found -o name --request-timeout=30s 2>"$err")"; rc=$?
   [ -z "$out" ] || printf '%s\n' "$out"
-  if [ $rc -ne 0 ] && grep -vqE 'no matches for kind|resource mapping not found|ensure CRDs are installed first|^[[:space:]]*$' "$err"; then
+  if [ $rc -ne 0 ] && { [ ! -s "$err" ] || grep -E -vq 'no matches for kind|resource mapping not found|ensure CRDs are installed first|^[[:space:]]*$' "$err"; }; then
     sed 's/^/  /' "$err" >&2; rm -f "$err"; return 2
   fi
   rm -f "$err"
@@ -165,7 +250,7 @@ existing() {
 # 終了コード: 0=OK 10=oc が無い 20=未ログイン/認証切れ 30=到達不可・TLS・その他
 cmd_cluster() {
   local out
-  if ! command -v oc >/dev/null 2>&1; then
+  if ! type -P oc >/dev/null 2>&1; then
     echo "[NG] oc がありません"
     echo "案内: Web コンソールの「?」→「Command line tools」、または https://mirror.openshift.com/pub/openshift-v4/clients/ocp/ から oc をインストールする"
     return 10
@@ -186,10 +271,11 @@ cmd_cluster() {
 # new <name>: ひな形から手順のディレクトリを作る
 cmd_new() {
   [ ! -e "$DIR/$SLUG" ] || { echo "[NG] $DIR/$SLUG は既にあります"; echo "案内: 別の手順名にする (既存の手順は再利用しない)"; exit 3; }
-  mkdir -p "$DIR/$SLUG/manifests" "$DIR/$SLUG/scripts"
+  safe_path "$DIR/$SLUG" || return 3
+  mkdir -p "$DIR/$SLUG/manifests" "$DIR/$SLUG/scripts" || die "手順のディレクトリを作れません"
   local v; v="$(minor)"
-  sed "s/VERSION/${v:-TODO}/" "$SKILL_DIR/templates/spec.md" > "$DIR/$SLUG/spec.md"
-  cp "$SKILL_DIR/templates/rollback.sh" "$DIR/$SLUG/scripts/rollback.sh"
+  sed "s/VERSION/${v:-TODO}/" "$SKILL_DIR/templates/spec.md" > "$DIR/$SLUG/spec.md" || die "spec.md を保存できません"
+  cp "$SKILL_DIR/templates/rollback.sh" "$DIR/$SLUG/scripts/rollback.sh" || die "rollback.sh を保存できません"
   echo "[OK] $DIR/$SLUG/ を作りました"
   echo "次: spec.md の '## 成功条件 (DoD)' を書いて合意を得る。合意したら、spec.md の残りと scripts/rollback.sh の TODO を埋め、manifests/NN-name.yaml (YAML で書けない作業は scripts/NN-name.sh) と scripts/NN-name.check.sh を作って、runbook.sh lint $SLUG"
 }
@@ -199,12 +285,12 @@ cmd_lint() {
   ng() { echo "[NG] $*"; fail=1; }
   [ -f spec.md ] || ng "spec.md がありません"
   head -1 spec.md 2>/dev/null | has '^# ' || ng "spec.md の 1 行目に '# タイトル' が必要"
-  grep -qx '## 前提条件' spec.md 2>/dev/null || echo "[WARN] spec.md に '## 前提条件' がありません"
-  grep '^## ' spec.md 2>/dev/null | grep -vxE '## (成功条件 \(DoD\)|前提条件|パラメータ|アクセス情報|関連情報)' | sed "s|^|[WARN] spec.md: 想定外の節です (手順に関わる補足はステップの '# 注記:' に書く): |"
+  grep -E -qx '## 前提条件' spec.md 2>/dev/null || echo "[WARN] spec.md に '## 前提条件' がありません"
+  grep -E '^## ' spec.md 2>/dev/null | grep -E -vx '## (成功条件 \(DoD\)|前提条件|パラメータ|アクセス情報|関連情報)' | sed "s|^|[WARN] spec.md: 想定外の節です (手順に関わる補足はステップの '# 注記:' に書く): |"
   # アクセス情報: Route で公開するもの (Web コンソールなど) は、URL・ユーザー名・パスワードの確かめ方を手順書の冒頭に載せる
   #   (YAML の kind: Route (引用符・行末の説明・List の中の字下げを含む) と、.sh の oc expose service / oc create route)
-  if { grep -qE "^[[:space:]-]*kind:[[:space:]]+[\"']?Route[\"']?[[:space:]]*(#.*)?\$" manifests/*.yaml 2>/dev/null ||
-       grep -qE 'oc[[:space:]]+(expose[[:space:]]+(svc|service)|create[[:space:]]+route)' scripts/*.sh 2>/dev/null; } &&
+  if { grep -E -q "^[[:space:]-]*kind:[[:space:]]+[\"']?Route[\"']?[[:space:]]*(#.*)?\$" manifests/*.yaml 2>/dev/null ||
+       grep -E -q 'oc[[:space:]]+(expose[[:space:]]+(svc|service)|create[[:space:]]+route)' scripts/*.sh 2>/dev/null; } &&
      [ -z "$(spec_section アクセス情報 2>/dev/null)" ]; then
     echo "[WARN] spec.md: Route を作成するので、'## アクセス情報' に URL・ユーザー名・パスワードの確かめ方を書く"
   fi
@@ -216,13 +302,13 @@ cmd_lint() {
                  if (v != "" && v != "-" && v != "なし" && v !~ /CHANGE_ME|Secret|oc /) print }' |
     sed "s/^/[WARN] spec.md: アクセス情報のパスワードは、値ではなく CHANGE_ME と、値を読む Secret やコマンドを書く: /"
   # 成功条件 (DoD): チェックリストの各項目に、それを確かめる check.sh のステップを付ける
-  if ! grep -qx '## 成功条件 (DoD)' spec.md 2>/dev/null; then ng "spec.md に '## 成功条件 (DoD)' が必要"
+  if ! grep -E -qx '## 成功条件 \(DoD\)' spec.md 2>/dev/null; then ng "spec.md に '## 成功条件 (DoD)' が必要"
   else
     [ -n "$(criteria)" ] || ng "spec.md の '## 成功条件 (DoD)' に '- [ ] 状態（確認: NN-name）' の項目が必要"
     while IFS= read -r d; do ng "spec.md: 成功条件の書式は '- [ ] 状態（確認: NN-name）' (チェックは付けない): $d"
-    done < <(spec_section "成功条件 (DoD)" | grep '^- ' | grep -vE "$DOD_ITEM")
+    done < <(spec_section "成功条件 (DoD)" | grep -E '^- ' | grep -E -v "$DOD_ITEM")
     while IFS= read -r d; do ng "spec.md: 成功条件に '|' は使わない: $d"
-    done < <(spec_section "成功条件 (DoD)" | grep '^- ' | grep -F '|')
+    done < <(spec_section "成功条件 (DoD)" | grep -E '^- ' | grep -E '[|]')
     for d in $(criteria | cut -d'|' -f1); do
       [ -f "$(chk "$d")" ] || ng "spec.md: 成功条件のステップ $(chk "$d") がありません"
     done
@@ -232,12 +318,12 @@ cmd_lint() {
   local ver; ver="${OCP_VERSION:-$(minor)}"
   if ! spec_section 関連情報 2>/dev/null | has -E 'https?://'; then
     echo "[WARN] spec.md の '## 関連情報' に、読んだドキュメントへのリンクがありません"
-  elif [ -n "$ver" ] && grep -q 'docs\.redhat\.com/[a-z-]*/documentation/openshift_container_platform/' spec.md 2>/dev/null &&
-       ! grep -q "docs\.redhat\.com/[a-z-]*/documentation/openshift_container_platform/$ver/" spec.md 2>/dev/null; then
+  elif [ -n "$ver" ] && grep -E -q 'docs\.redhat\.com/[a-z-]*/documentation/openshift_container_platform/' spec.md 2>/dev/null &&
+       ! grep -E -q "docs\.redhat\.com/[a-z-]*/documentation/openshift_container_platform/$ver/" spec.md 2>/dev/null; then
     echo "[WARN] spec.md の '## 関連情報' の OpenShift のドキュメントが、接続中のクラスタのバージョン ($ver) と違います"
   fi
   # YAML の確認には oc が必要 (クラスタには接続しない)
-  local has_oc=1; command -v oc >/dev/null 2>&1 || { has_oc=0; ng "oc がありません (YAML の確認に必要)"; }
+  local has_oc=1; type -P oc >/dev/null 2>&1 || { has_oc=0; ng "oc がありません (YAML の確認に必要)"; }
   # クラスタにある種類を "グループ/Kind" で集める (接続できないときは空。namespace の確認を省く)
   local nsd cls key
   kinds() { oc api-resources --namespaced="$1" --no-headers --request-timeout=10s 2>/dev/null | awk '{v = $(NF-2); sub(/\/?[^\/]*$/, "", v); printf "%s/%s ", v, $NF}'; }
@@ -245,14 +331,14 @@ cmd_lint() {
   if [ "$nsd" = " " ] && [ $has_oc = 1 ]; then
     [ "$CMD" = run ] && ng "クラスタの API 情報を取得できないため、namespace の要否を確認できません" || echo "[WARN] クラスタの API 情報を取得できないため、namespace の要否を確認していません"
   fi
-  for f in $(grep -l TODO spec.md manifests/* scripts/* 2>/dev/null); do ng "$f: TODO が残っています"; done
+  for f in $(grep -E -l TODO spec.md manifests/* scripts/* 2>/dev/null); do ng "$f: TODO が残っています"; done
   [ -n "$(steps)" ] || ng "manifests/ か scripts/ にステップがありません"
   [ -f scripts/rollback.sh ] || ng "scripts/rollback.sh がありません"
   for f in manifests/* scripts/*; do
     [ -e "$f" ] || continue
     case "$f" in *.sh)
       bash -n "$f" 2>/dev/null || ng "$f: bash 構文エラー"
-      grep -qx 'set -euo pipefail' "$f" || ng "$f: 'set -euo pipefail' の行が必要 (この行より後がブロックになる)"
+      grep -E -qx 'set -euo pipefail' "$f" || ng "$f: 'set -euo pipefail' の行が必要 (この行より後がブロックになる)"
       for ((k = 1; k <= $(blocks "$f"); k++)); do
         block_part "$f" $k code | bash -n 2>/dev/null ||
           ng "$f: ブロック $k だけでは構文が完結しない (ループやヒアドキュメントの途中に空行を入れない)"
@@ -267,9 +353,9 @@ cmd_lint() {
         b="$(basename "$f" .check.sh)"; [ -f "manifests/$b.yaml" ] || [ -f "scripts/$b.sh" ] || ng "$f: 対応するステップがありません"
         [ -n "$(title "$f")" ] || ng "$f: 先頭に '# 確認する状態' のコメントが必要"
         [[ $(title "$f") != *'|'* ]] || ng "$f: 1 行目に '|' は使わない"
-        grep -q 'rollout status' "$f" && echo "[WARN] $f: rollout status ではなく、oc wait で待ってから oc get pods / oc logs で状態を見せる"
-        grep -n 'oc wait' "$f" | grep -v -- '--timeout' | sed "s|^|[WARN] $f: oc wait に --timeout を付ける: |"
-        grep -n 'oc get.*|[[:space:]]*grep -q' "$f" | sed "s|^|[WARN] $f: oc get の出力を変数に入れてから判定する: |";;
+        grep -E -q 'rollout status' "$f" && echo "[WARN] $f: rollout status ではなく、oc wait で待ってから oc get pods / oc logs で状態を見せる"
+        grep -E -n 'oc wait' "$f" | grep -E -v -- '--timeout' | sed "s|^|[WARN] $f: oc wait に --timeout を付ける: |"
+        grep -E -n 'oc get.*[|][[:space:]]*grep .*q' "$f" | sed "s|^|[WARN] $f: oc get の出力を変数に入れてから判定する: |";;
       manifests/*.yaml|scripts/*.sh)
         b="$(sid "$f")"
         basename "$f" | has -E '^[0-9]{2}-[a-z0-9-]+\.(yaml|sh)$' || ng "$f: 名前は NN-name.yaml / NN-name.sh"
@@ -291,11 +377,11 @@ cmd_lint() {
               fi
             done < <(oc label --local -f "$f" x=y -o go-template='{{.apiVersion}}|{{.kind}}|{{.metadata.name}}|{{with .metadata.namespace}}{{.}}{{end}}{{"\n"}}' 2>/dev/null)
           fi
-          grep -qE '^kind:[[:space:]]*Secret' "$f" && ! grep -q CHANGE_ME "$f" && echo "[WARN] $f: Secret の値は CHANGE_ME にする"
+          grep -E -q '^kind:[[:space:]]*Secret' "$f" && ! grep -E -q CHANGE_ME "$f" && echo "[WARN] $f: Secret の値は CHANGE_ME にする"
           # 行末の説明は、手順書で「ここでは、以下のようになります。」のリストになる。「〜します。」の文で書く
-          body "$f" | sed -n "s@$KEYDOC@\\3@p" | grep -v '。$' | sed "s|^|[WARN] $f: 行末の説明は「〜します。」の文で書く: |"
+          body "$f" | sed -n "s@$KEYDOC@\\3@p" | grep -E -v '。$' | sed "s|^|[WARN] $f: 行末の説明は「〜します。」の文で書く: |"
           # 説明として読み取れない行末のコメント (引用符を含むなど) は、手順書の YAML にそのまま残る
-          body "$f" | grep -E '[^[:space:]][[:space:]]+# ' | grep -v "$(printf '%s' "$KEYDOC" | sed 's/\\(/(/g; s/\\)/)/g; s/\\{/{/g; s/\\}/}/g')" -E | sed "s|^|[WARN] $f: 行末のコメントを説明として扱えません (引用符を使わない): |"
+          body "$f" | grep -E '[^[:space:]][[:space:]]+# ' | grep -E -v "$(printf '%s' "$KEYDOC" | sed 's/\\(/(/g; s/\\)/)/g; s/\\{/{/g; s/\\}/}/g')" -E | sed "s|^|[WARN] $f: 行末のコメントを説明として扱えません (引用符を使わない): |"
           for img in $(sed -n 's/^[[:space:]-]*image:[[:space:]]*//p' "$f" | sed 's/[[:space:]]#.*//' | tr -d "\"'"); do
             [[ ${img##*/} == *@sha256:* || ( ${img##*/} == *:* && $img != *:latest ) ]] || echo "[WARN] $f: $img のタグを固定する"
           done
@@ -351,7 +437,7 @@ cmd_plan() {
     for s in $(cat run/applied.txt 2>/dev/null); do
       if out="$(existing "$s" 2>/dev/null)"; then exist+="$out"$'\n'; else unknown=1; fi
     done
-    exist="$(printf '%s' "$exist" | grep -v '^$' || true)"
+    exist="$(printf '%s' "$exist" | grep -E -v '^$' || true)"
     [ -z "$exist" ] || printf '%s\n' "$exist" | sed 's/^/  - 削除: /'
     [ $unknown = 0 ] || echo "  - (適用した YAML のリソースの一部は、残っているか確認できません。権限・通信を確認する)"
     [ -n "$exist" ] || [ $unknown = 1 ] || [ ! -s run/applied.txt ] || echo "  - (適用した YAML のリソースは、クラスタに見つかりません)"
@@ -370,14 +456,14 @@ run_step() {
     exist="$(existing "$s")" || { echo "[NG] 既にあるかどうかを確認できないため適用しない"; return 1; }
     [ -z "$exist" ] || { echo "[NG] 既に存在するため適用しない (cleanup で消えてしまうため): $exist"; return 1; }
     # 適用したときの内容を保存し、cleanup はその内容で削除する (後でファイルを直しても、別のリソースを消さない)
-    mkdir -p run/applied; cp "$s" "run/applied/${s##*/}"
-    echo "run/applied/${s##*/}" >> run/applied.txt
-    oc apply -f "$s" || return 1
+    mkdir -p run/applied && cp "$s" "run/applied/${s##*/}" &&
+      echo "run/applied/${s##*/}" >> run/applied.txt || { echo '[NG] 適用記録を保存できません'; return 1; }
+    oc apply -f "run/applied/${s##*/}" || return 1
   else
-    touch run/touched
-    bash <(instrument "$s" run) || return 1
+    touch run/touched || { echo '[NG] 実行記録を保存できません'; return 1; }
+    execute_script "$s" run || return 1
   fi
-  bash <(instrument "$(chk "$(sid "$s")")" check)
+  execute_script "$(chk "$(sid "$s")")" check
 }
 
 # diagnose: 適用した YAML の Namespace について、リソース・イベント・Pod ログを出力する (rollback で消える前に記録する)
@@ -385,7 +471,7 @@ diagnose() {
   local f ns p out
   for ns in $(for f in $(cat run/applied.txt 2>/dev/null); do
       oc label --local -f "$f" x=y -o go-template='{{if eq .kind "Namespace"}}{{.metadata.name}}{{else}}{{with .metadata.namespace}}{{.}}{{end}}{{end}}{{"\n"}}'
-    done | grep -v '^$' | sort -u); do
+    done | grep -E -v '^$' | sort -u); do
     echo "=== 診断: namespace $ns"
     oc -n "$ns" get all -o wide 2>/dev/null
     echo "--- events"; oc -n "$ns" get events --sort-by=.lastTimestamp | tail -20
@@ -418,9 +504,10 @@ cmd_run() {
     elif [ -n "$exist" ]; then printf '%s\n' "$exist" | sed "s|^|[NG] $s: 既に存在する: |"; pre=1; fi
   done
   [ $pre = 0 ] || { echo "次: runbook.sh plan $SLUG"; return 3; }
-  local fp; fp="$(fingerprint)"   # 実行中にファイルを直しても、実行した内容の指紋を記録する
-  rm -rf run; mkdir -p run/logs; touch run/pending; echo "$tgt" > run/server
-  cmd_doc >/dev/null   # 実行中・中断時に、前回の「検証済み」の手順書が残らないようにする
+  local fp; fp="$(fingerprint)" || return 3   # 実行中にファイルを直しても、実行した内容の指紋を記録する
+  remove_tree "$PWD/run" && mkdir -p run/logs && touch run/pending &&
+    printf '%s\n' "$tgt" > run/server || { echo '[NG] 実行記録を準備できません'; return 3; }
+  cmd_doc >/dev/null || { echo '[NG] 未検証の手順書を保存できないため開始しません'; return 3; }
   # 中断されたとき (Bash の timeout など) は、その旨を記録して終える。pending が残るので cleanup で元に戻せる
   #   (ステップの出力はログに向けているので、画面への出力は fd 3 に書く)
   #   どの段階で中断したか (step / rollback / reapply) も記録する
@@ -442,7 +529,7 @@ cmd_run() {
     # 何も変更していない (最初のステップの適用前に止まった) ので、切り戻さない
     rb=不要; cl=不要; echo "[SKIP] rollback / cleanup (何も変更していません)"; rm -f run/pending
   else
-    bash <(instrument scripts/rollback.sh rollback) > run/logs/rollback.log 2>&1 || rb=NG; echo "[$rb] rollback"
+    execute_script scripts/rollback.sh rollback > run/logs/rollback.log 2>&1 || rb=NG; echo "[$rb] rollback"
     # rollback.sh が止まったとき (この手順で作成していないリソースがあるなど) は、YAML も削除しない。ユーザーが判断する
     if [ $rb = OK ]; then delete_applied > run/logs/cleanup.log 2>&1 || cl=NG; else cl=未実施; fi; echo "[$cl] cleanup"
     [ $rb = OK ] && [ $cl = OK ] && rm -f run/pending run/touched
@@ -453,7 +540,8 @@ cmd_run() {
   if [ "$keep" = 1 ] && [ -z "$failed" ] && [ "$rb" = OK ] && [ "$cl" = OK ] && [ "$(fingerprint)" != "$fp" ]; then
     ra=未実施; echo "[SKIP] 再適用 (検証中にファイルが変更されたため。リソースは残していません。変更した内容で run をやり直す)"
   elif [ "$keep" = 1 ] && [ -z "$failed" ] && [ "$rb" = OK ] && [ "$cl" = OK ]; then
-    phase=reapply; ra=OK; mkdir -p run/logs/reapply; touch run/pending
+    phase=reapply; ra=OK
+    mkdir -p run/logs/reapply && touch run/pending || { echo '[NG] 再適用の記録を準備できません'; return 3; }
     for s in $(steps); do
       b="$(sid "$s")"
       if run_step "$s" > "run/logs/reapply/$b.log" 2>&1; then echo "[OK] 再適用 $b"
@@ -486,9 +574,9 @@ cmd_run() {
       printf '\n## NG: %s（末尾 60 行）\n\n```text\n' "$n"; tail -60 "run/logs/$n.log"; echo '```'
     done
     echo; echo "全ログ: run/logs/"
-  } > run/result.md
+  } > run/result.md || { echo "[NG] 検証結果を保存できません。run/ の記録を確認してください"; return 2; }
   echo "結果: $result → $DIR/$SLUG/run/result.md"
-  cmd_doc
+  cmd_doc || { echo "[NG] 手順書を保存できません。run/ の記録を確認してください"; return 2; }
   if [ $result = FAIL ]; then
     if [ -n "$failed" ]; then echo "次: $DIR/$SLUG/run/logs/$failed.log で原因を調べる"
     elif [ $rb = NG ]; then echo "次: $DIR/$SLUG/run/logs/rollback.log で原因を調べる"
@@ -497,7 +585,7 @@ cmd_run() {
     if leftover; then echo "次: リソースが残っている。ファイルを直す前に runbook.sh plan $SLUG で確認し、runbook.sh cleanup $SLUG (rollback.sh の不具合なら、rollback.sh だけを先に直す)"
     elif [ -n "$failed" ]; then echo "次: ファイルを直して run をやり直す"; fi
   fi
-  [ "$ra" = OK ] && echo "案内: 切り戻しまで検証してから再適用し、リソースを残しています。元に戻すときは runbook.sh cleanup $SLUG を実行する (runbook.md の「切り戻し」の手順で手で戻した場合も、次の検証の前に cleanup で記録を消す)"
+  [ "$ra" = OK ] && echo "案内: 切り戻しまで検証してから再適用し、リソースを残しています。元に戻すときは runbook.sh cleanup $SLUG を実行する"
   { [ -n "$failed" ] || [ -n "$reapplied" ]; } && return 1
   [ $result = PASS ] || return 2
   return 0
@@ -510,7 +598,7 @@ cmd_cleanup() {
   same_target || { target_ng; return 3; }
   pin_kubeconfig || return 3
   if rollback_needed; then
-    bash <(instrument scripts/rollback.sh rollback) || { echo "[NG] rollback.sh が失敗しました"; echo "案内: 上の出力と読み取りだけの調査で原因を調べる。この手順で作成していないリソースがあって止まった場合は、どうするかをユーザーに聞く"; return 1; }
+    execute_script scripts/rollback.sh rollback || { echo "[NG] rollback.sh が失敗しました"; echo "案内: 上の出力と読み取りだけの調査で原因を調べる。この手順で作成していないリソースがあって止まった場合は、どうするかをユーザーに聞く"; return 1; }
   fi
   delete_applied || { echo "案内: 残ったリソースを読み取りだけの調査で調べる (finalizer など)。強制削除は、ユーザーの了承を得てから行う"; return 1; }
   rm -f run/pending run/touched
@@ -519,21 +607,34 @@ cmd_cleanup() {
 
 # 適用した YAML を逆順に削除し、残っていないことを確かめる
 delete_applied() {
-  local f out left="" unknown=""
-  [ -s run/applied.txt ] || { echo "[OK] 適用した YAML はありません"; return 0; }
-  for f in $(tac run/applied.txt 2>/dev/null || tail -r run/applied.txt); do
-    out="$(oc delete -f "$f" --ignore-not-found --wait --timeout=$TIMEOUT 2>&1)"
+  local f out todo tmp
+  validate_records || return 1
+  # 一覧の置換後に中断して残った保存 YAML も、最後に回収する。
+  if [ ! -s run/applied.txt ]; then
+    remove_tree "$PWD/run/applied" && rm -f run/applied.txt || { echo '[NG] 適用記録を削除できません'; return 1; }
+    echo "[OK] 適用した YAML はありません"; return 0
+  fi
+  todo="$(mktemp "$WORK/delete.XXXXXX")" || return 1
+  awk '{line[NR]=$0} END {for (i=NR; i>0; i--) print line[i]}' run/applied.txt > "$todo" || return 1
+  while IFS= read -r f || [ -n "$f" ]; do
+    # 同じディレクトリ内で置き換え、一覧が途中まで書かれた状態を残さない。
+    tmp="$(mktemp "$PWD/run/.applied.XXXXXX")" || return 1
+    if ! awk -v removed="$f" '$0 != removed' run/applied.txt > "$tmp"; then
+      rm -f "$tmp"; echo '[NG] 適用記録を準備できません'; return 1
+    fi
+    out="$(oc delete -f "$f" --ignore-not-found --wait --timeout="$TIMEOUT" 2>&1)"
     # CRD が消えていれば、その kind のリソースも存在しない
-    printf '%s\n' "$out" | grep -vE 'no matches for kind|resource mapping not found|ensure CRDs are installed first|^[[:space:]]*$' || true
-  done
-  # 残っていないことを確かめる。確認できないとき (権限・通信) は、残っているものとして扱う
-  for f in $(cat run/applied.txt); do
-    if ! out="$(existing "$f")"; then unknown+="$f"$'\n'
-    elif [ -n "$out" ]; then left+="$out"$'\n'; fi
-  done
-  [ -z "$unknown" ] || { echo "[NG] 削除できたか確認できません (権限・通信を確認する):"; printf '%s' "$unknown"; return 1; }
-  [ -z "$left" ] || { echo "[NG] 削除できなかったリソース:"; printf '%s' "$left"; return 1; }
-  rm -f run/applied.txt; rm -rf run/applied
+    printf '%s\n' "$out" | grep -E -v 'no matches for kind|resource mapping not found|ensure CRDs are installed first|^[[:space:]]*$' || true
+    if ! out="$(existing "$f")"; then
+      rm -f "$tmp"; echo "[NG] 削除できたか確認できません (権限・通信を確認する): $f"; return 1
+    elif [ -n "$out" ]; then
+      rm -f "$tmp"; printf '[NG] 削除できなかったリソース:\n%s\n' "$out"; return 1
+    fi
+    # 一覧から外してからファイルを消す。どちらの間で中断しても一覧の参照先は失われない。
+    mv -f "$tmp" run/applied.txt || { rm -f "$tmp"; echo '[NG] 適用記録を更新できません'; return 1; }
+    rm -f "$f" || { echo '[NG] 保存した YAML を削除できません'; return 1; }
+  done < "$todo"
+  remove_tree "$PWD/run/applied" && rm -f run/applied.txt || { echo '[NG] 適用記録を削除できません'; return 1; }
   echo "[OK] 適用した YAML を削除しました"
 }
 
@@ -662,17 +763,28 @@ cmd_doc() {
     echo "## 前提条件"
     echo
     spec_section 前提条件
-    echo "- コマンドは、この手順書があるディレクトリ (manifests/ と scripts/ がある場所) で実行する。"
+    echo "- この手順で作成するリソースが、まだ存在しない。存在する場合は実行しない（切り戻しで消えるため）。"
+    echo "- manifests/ と scripts/ (rollback.sh を含む) をこの手順書と同じディレクトリにあらかじめ配置し、コマンドはそのディレクトリで実行する。"
     [ -n "$(spec_other)" ] && { echo; spec_other; }
     echo
     echo "## 手順"
+    # 事前確認は番号付きの作業に含めず、DoD の手順番号を維持する。
+    if [ -n "$(steps | grep -E '\.yaml$')" ]; then
+      echo; echo "### 事前確認"; echo
+      echo "次のコマンドを実行して、manifests/ のすべての YAML の対象リソースについて、何も表示されないことを確認します。リソース名が表示された場合は、既存リソースがあるため中止します。no matches for kind / resource mapping not found（CRD がまだ登録されていない）は、そのリソースがまだ存在しないものとして続行します。それ以外のエラー（権限・通信など）で確認できない場合は中止し、以降の手順へ進まないでください。"
+      echo
+      for s in $(steps); do
+        [[ $s == *.yaml ]] && echo "oc get -f $s --ignore-not-found -o name"
+      done | prompt | block terminal ""
+      echo; echo "### 作業"
+    fi
     for s in $(steps); do
       b="$(sid "$s")"; i=$((i+1)); log="$(steplog "$b")"; j=1
       echo
       echo "$i. $(title "$s" | polite)。"
       notes "$s" "$I"
       if [[ $s == *.yaml ]]; then
-        echo; echo "${I}$j. 次の YAML を使用して \`$s\` ファイルを作成します。"; j=$((j+1))
+        echo; echo "${I}$j. あらかじめ配置した \`$s\` ファイルの内容が、次の YAML と一致することを確認します。"; j=$((j+1))
         echo; yaml_body "$s" | block yaml "$II"
         yaml_where "$s" "$II"
         echo; echo "${I}$j. 次のコマンドを実行して、マニフェストを適用します。"; j=$((j+1))
@@ -718,28 +830,35 @@ cmd_doc() {
       admonition 重要 "この切り戻しの手順は、検証では実行していません。実行する前に、内容を確認してください。" ""
     fi
     notes scripts/rollback.sh ""
-    # 複数のブロックは 1 つのスクリプトとして実行される (変数を引き継ぎ、止める条件で以降を実行しない)
-    if [ "$(for ((k = 1; k <= $(blocks scripts/rollback.sh); k++)); do block_part scripts/rollback.sh $k code | head -1; done | grep -c .)" -gt 1 ]; then
-      admonition 注記 "次のコマンドは、同じシェルで上から順に実行します。途中で「止めます」と表示された場合は、それ以降のコマンドを実行しないでください。" ""
-    fi
     echo
     echo "### 手順"
-    local rbn=0 k yamls out
-    for ((k = 1; k <= $(blocks scripts/rollback.sh); k++)); do [ -n "$(block_part scripts/rollback.sh $k code)" ] && rbn=$((rbn + 1)); done
-    [ $rbn = 0 ] || script_step scripts/rollback.sh rollback "" "$([ "$result" = PASS ] && [ -f run/logs/rollback.log ] && echo run/logs/rollback.log || echo /dev/null)" \
-      "1. 次のコマンドを実行します。" ""
-    yamls="$(steps | grep '\.yaml$' | { tac 2>/dev/null || tail -r; })"
-    if [ -n "$yamls" ]; then
-      echo; echo "$((rbn + 1)). 次のコマンドを実行して、作成したリソースを、適用したときと逆の順序で削除します。"
-      echo; printf '%s\n' "$yamls" | sed 's/^/oc delete -f /; s/$/ --ignore-not-found/' | prompt | block terminal "   "
-      out="$([ "$result" = PASS ] && grep -v '^\[OK\]' run/logs/cleanup.log 2>/dev/null | head -30)"
+    local yamls out
+    echo
+    echo "1. 次のコマンドを実行して、切り戻しスクリプトを実行します。"
+    echo
+    echo "bash scripts/rollback.sh" | prompt | block terminal "   "
+    echo
+    echo "   「止めます」と表示された場合や、コマンドが失敗した場合は、次の YAML の削除に進まないでください。"
+    if [ "$result" = PASS ] && [ -f run/logs/rollback.log ]; then
+      out="$(awk '!/^--- rollback:[0-9]+$/ && n < 30 {print; n++}' run/logs/rollback.log)"
       [ -z "$out" ] || { echo; echo "   **出力例**"; echo; printf '%s\n' "$out" | block terminal "   "; }
     fi
-    [ $rbn != 0 ] || [ -n "$yamls" ] || { echo; echo "戻すものはありません。"; }
+    echo
+    echo "   **参考: scripts/rollback.sh の内容**"
+    echo
+    block bash "   " < scripts/rollback.sh
+    yamls="$(steps | grep -E '\.yaml$' | { tac 2>/dev/null || tail -r; })"
+    if [ -n "$yamls" ]; then
+      echo; echo "2. 次のコマンドを実行して、作成したリソースを、適用したときと逆の順序で削除します。"
+      echo; printf '%s\n' "$yamls" | sed 's/^/oc delete -f /; s/$/ --ignore-not-found/' | prompt | block terminal "   "
+      out="$([ "$result" = PASS ] && grep -E -v '^\[OK\]' run/logs/cleanup.log 2>/dev/null | head -30)"
+      [ -z "$out" ] || { echo; echo "   **出力例**"; echo; printf '%s\n' "$out" | block terminal "   "; }
+    fi
     if [ -n "$(spec_section 関連情報)" ]; then
       echo; echo "## 関連情報"; echo; spec_section 関連情報
     fi
-  } | cat -s > runbook.md
+  } | cat -s > "$WORK/runbook.md" || { echo "[NG] 手順書を生成できません"; return 1; }
+  cp "$WORK/runbook.md" runbook.md || { echo "[NG] 手順書を保存できません"; return 1; }
   echo "[OK] $DIR/$SLUG/runbook.md"
   [ "$result" = PASS ] || echo "[WARN] 検証結果が PASS ではありません (${result:-未検証})"
 }
@@ -748,6 +867,8 @@ cmd_doc() {
 
 usage() { awk 'NR == 1 {next} /^#/ {sub(/^# ?/, ""); print; next} {exit}' "$0"; exit 3; }
 CMD="${1:-}"; SLUG="${2:-}"
+safe_path "$DIR" || exit 3
+init_work || die "一時領域を準備できません"
 case "$CMD" in
   cluster) cmd_cluster;;
   new)
@@ -755,7 +876,9 @@ case "$CMD" in
     cmd_new;;
   lint|plan|run|cleanup|doc)
     [[ $SLUG =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "usage: runbook.sh $CMD <name>"
+    safe_tree "$DIR/$SLUG" || exit 3
     cd "$DIR/$SLUG" 2>/dev/null || die "$DIR/$SLUG がありません"
+    validate_records || exit 3
     "cmd_$CMD" "${@:3}";;
   *) usage;;
 esac

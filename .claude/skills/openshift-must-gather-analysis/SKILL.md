@@ -1,7 +1,7 @@
 ---
 name: openshift-must-gather-analysis
 description: OpenShiftのmust-gatherから事象の原因を調べ、対処案とあわせて報告書にまとめる。
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, WebFetch, WebSearch, ToolSearch, mcp__rhdocs__redhat_docs_search, mcp__rhdocs__redhat_docs_fetch, mcp__rhkcs__search_kcs, mcp__rhkcs__get_kcs
+allowed-tools: Read, Glob, Grep, AskUserQuestion, WebFetch, WebSearch, ToolSearch, mcp__rhdocs__redhat_docs_search, mcp__rhdocs__redhat_docs_fetch, mcp__rhkcs__search_kcs, mcp__rhkcs__get_kcs
 argument-hint: "[must-gatherで調べたい事象]"
 ---
 
@@ -30,7 +30,7 @@ argument-hint: "[must-gatherで調べたい事象]"
 
 1. must-gather の取得日時（日本時間も）とクラスタのバージョンを示し、事象のうち、何が・いつから・どこで・エラーメッセージ・直前の変更の足りない点だけを聞く（引数が無ければ、すべて聞く）。
    - 事象の時刻が取得日時より後なら、この must-gather では確かめられないことを伝える。
-   - 事象に OpenShift 本体以外の製品（CSI Driver、Operator など）が関わるなら、`mg.sh ns <case>` でその Namespace の Pod とログがあるかを確かめ、無ければ `案内:` のとおり追加の資料を依頼する。取れなければ「未確認事項」に回す。
+   - 事象に OpenShift 本体以外の製品（CSI Driver、Operator など）が関わるなら、`mg.sh ns <case>` でその Namespace の Pod とログがあるかを確かめ、無ければ、情報が不足していることを伝え、「未確認事項」に回す。
 2. `mg.sh plan <case>` で確認事項のファイル（`checklist.md`）を作り、ガイドの「確認事項と調査項目」に従って、「事象」「確認事項」「調査項目」を書く。
 3. `mg.sh items <case>` の出力（確認事項と調査項目）を、そのままユーザーに示す。足りない確認事項があれば、足す。
 
@@ -62,7 +62,7 @@ argument-hint: "[must-gatherで調べたい事象]"
 
 ## 8. 報告書
 
-ガイドの「報告書」に従って、残りの節（概要、時系列、原因、対処案、情報元）を書き、書き足してきた節を見直す。`mg.sh lint <case>` を、`[NG]` と `[WARN]` が無くなるまで直す。lint で確かめられないことは、ガイドの「報告書」に従って見直す。
+ガイドの「報告書」に従って、残りの節（概要、時系列、原因、対処案、情報元）を書き、書き足してきた節を見直す。`mg.sh lint <case>` の `[NG]` はすべて直す。`[WARN]` は内容を確認して修正するが、情報元が見つからない場合やコマンドで確認できない場合は、調べた範囲・理由・代わりの確認方法を該当節に書き、残る WARN と理由を完了報告に添えてよい。lint で確かめられないことは、ガイドの「報告書」に従って見直す。
 
 ## 完了報告
 

@@ -1,7 +1,7 @@
 ---
 name: openshift-runbook
 description: OpenShiftに設定を適用する手順書を作り、接続中のクラスタで適用から切り戻しまで試して検証する。
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, WebFetch, ToolSearch, mcp__rhdocs__redhat_docs_search, mcp__rhdocs__redhat_docs_fetch, mcp__rhkcs__search_kcs, mcp__rhkcs__get_kcs
+allowed-tools: Read, Glob, Grep, AskUserQuestion, WebFetch, ToolSearch, mcp__rhdocs__redhat_docs_search, mcp__rhdocs__redhat_docs_fetch, mcp__rhkcs__search_kcs, mcp__rhkcs__get_kcs
 argument-hint: "[適用したい設定]"
 ---
 
@@ -78,9 +78,26 @@ AskUserQuestion で確認し、回答なしに進めない。既に得た承認�
 
 ## 完了報告
 
-各段階の結果と runbook.md のパスを報告する。リソースを残し、spec.md に `## アクセス情報` があれば、その表も示す。`[WARN]`（未検証、FAIL、検証後に変更）が出たら伝える。リソースを残した場合や、削除できなかったリソースがある場合は、そのことと、元に戻す方法（`T cleanup <name>`。runbook.md の「切り戻し」の手順で手で戻した場合も、次に検証する前に `T cleanup <name>` で記録を消す）を伝える。
+各段階の結果と runbook.md のパスを報告する。リソースを残し、spec.md に `## アクセス情報` があれば、その表も示す。`[WARN]`（未検証、FAIL、検証後に変更）が出たら伝える。リソースを残した場合や、削除できなかったリソースがある場合は、そのことと、元に戻す方法（`T cleanup <name>`）を伝える。
 
 ## ルール
 
 - `oc login`、コンテキストの切り替え、ツールのインストールは自分で実行せず、`! oc login …` のようにユーザーに依頼する（Bash で実行するコマンドには `!` を付けない）。トークンは表示しない。
 - スクリプトが行う処理を、手でコマンドを打って代わりに実行しない。手順を変えるときはファイルを直す。
+
+## 手順書の実行
+
+- 手順書は「次のコマンドを実行します → 出力例」の形式で示す。前提条件に、作成するリソースがまだ存在しないことを含める。
+- 前提条件に、manifests/ と scripts/ (rollback.sh を含む) を手順書と同じディレクトリにあらかじめ配置し、そこでコマンドを実行することを明記する。YAML の手順ではファイルを新規作成せず、配置済みファイルの内容が掲載した YAML と一致することを確認する。
+- 手順の先頭で、manifests/ のすべての YAML に対して `oc get -f <各YAML> --ignore-not-found -o name` を実行し、何も表示されないことを確認する。リソース名が表示された場合は中止する。no matches for kind / resource mapping not found（CRD がまだ登録されていない）は、そのリソースがまだ存在しないものとして続行する。それ以外のエラー（権限・通信など）で確認できない場合は中止する。
+- 切り戻しは `bash scripts/rollback.sh` を実行する。「止めます」と表示された場合や失敗した場合は次へ進まない。正常終了後、YAML を適用時と逆の順序で削除する。rollback.sh の内容は実行コマンドの下に参考として載せ、ブロックごとには実行させない。
+
+- 指紋は manifests/・scripts/ のコメント行と YAML の行末の説明コメントを除いた内容、および spec.md の成功条件・パラメータから計算する。コメントだけの変更では検証済みのまま、`doc` で手順書を作り直せる。実行内容を変更したら再検証する。
+
+## 安全な実行と記録
+
+- スキルのスクリプトが扱う手順はリポジトリ内に置く。読み込むパスの `..` とシンボリックリンク（内部向けも含む）は拒否する。適用記録には `run/applied/NN-name.yaml` だけを許可し、絶対パスは受け付けない。
+- 記録の準備・保存に失敗したら、対応するクラスタ変更を始めない。スキルが実行する切り戻しスクリプトは、ファイルへの展開と構文検査に成功した場合だけ実行する。
+- 相対パスの `RUNBOOK_DIR` は実行時のカレントディレクトリを基準に絶対パスへ変換してから、安全性を検査する。
+- cleanup は YAML を逆順に削除し、存在しないことを確認できたものから適用記録を外す。途中で失敗・中断したら、残りを次の cleanup で再開する。適用一覧の更新用一時ファイルは、同じファイルシステム内で置き換えるため run/ に作る。
+- その他の一時ファイル・kubeconfig は Git 管理対象外の `runbooks/.runtime/` に置く。終了時に通常ファイルと空ディレクトリを順に削除する。

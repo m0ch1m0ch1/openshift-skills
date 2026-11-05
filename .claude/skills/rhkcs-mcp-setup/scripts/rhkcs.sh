@@ -8,9 +8,10 @@
 #   rhkcs.sh check   導入の状況を確認する (バイナリ、Go (ビルドしていなければ)、token、.mcp.json)。token の値は表示しない
 #   rhkcs.sh build   固定したコミットのソースを取得し、バイナリをビルドする (Go が必要。ユーザーが入れる)
 #   rhkcs.sh token   offline token を、画面に表示せずに入力して .rhkcs/token に保存する (端末から実行する。Claude Code の Bash からは実行できない)
-#   rhkcs.sh test    MCP サーバーを起動し、search_kcs で 1 件検索できるかを確かめる
+#   rhkcs.sh test    MCP サーバーを起動し、search_kcs のエラーと記事 URL の有無を確かめ、1 件目の題名と URL を表示する
 #   rhkcs.sh update  固定したコミットから取得元の最新までの変更 (コミット、変わったファイル、通信先・token・環境変数・ツールの名前と引数に関わる行) を表示する。.rhkcs/src に最新を取得するだけで、ほかは書き換えない
 #   rhkcs.sh run     MCP サーバーを起動する (.mcp.json から Claude Code が実行する。標準出力は MCP の通信に使う。固定したコミットでビルドしたものだけを起動する)
+#   rhkcs.sh permissions token の権限だけを 600 に直す (内容は読まない)
 #   (終了コード: 0=OK 1=NG 3=開始できない)
 #
 # 置き場所 (すべてリポジトリの中の .rhkcs/。Git の管理対象外。リポジトリの外には書かない):
@@ -20,11 +21,13 @@
 #   .rhkcs/log/    MCP サーバーのログ
 #   .rhkcs/token   offline token (権限 600。run が読んで MCP サーバーに渡す)
 set -uo pipefail
+set +x  # 呼び出し元が xtrace を有効にしていても token を記録しない
+umask 077
 REPO_URL="https://github.com/cldmnky/mcp-servers.git"
 PIN="7e39b5c2eb5f78f6b129e4608f90a31e6c059819"   # 2026-10-05「Fix MCP server reliability and Jira query handling」
 GO_MIN="1.25.0"                                  # go.mod の go の行
 # リポジトリのルートは、実行した場所ではなく、スクリプトの場所 (.claude/skills/<skill>/scripts/) から決める
-TOP="$(cd "$(dirname "$0")/../../../.." && pwd)"
+TOP="$(cd "$(dirname "$0")/../../../.." && pwd -P)" || exit 3
 S="$TOP/.rhkcs"
 BIN="$S/bin/rhkcs-mcp"
 TOKEN_FILE="$S/token"
@@ -32,12 +35,12 @@ SCRIPT=".claude/skills/rhkcs-mcp-setup/scripts/rhkcs.sh"
 T="bash $SCRIPT"
 NEXT_TOKEN="https://access.redhat.com/management/api で offline token を作り、別のターミナルで $T token を実行する"
 
-die() { echo "[NG] $*"; exit 3; }
+die() { echo "[NG] $*" >&2; exit 3; }
 # own_dir <ディレクトリ…>: .rhkcs の下にディレクトリを作る
-#   .rhkcs がシンボリックリンクだと、リンク先 (リポジトリの外かもしれない) に書いてしまうため、書かない
+#   main で .rhkcs 以下を検査した後にだけ呼ぶ。保存先を他ユーザーと共有しない。
 own_dir() {
-  [ ! -L "$S" ] || die "${S#$TOP/} がシンボリックリンクです (消してから、もう一度実行する)"
   mkdir -p "$@" || die "${S#$TOP/} にディレクトリを作れません"
+  chmod 700 "$S" || die ".rhkcs の権限を変更できません"
 }
 # has <grep の引数>: 標準入力に一致する行があるか。pipefail のもとで grep -q は偽になることがあるため、入力を最後まで読む
 has() { grep "$@" >/dev/null; }
@@ -48,7 +51,7 @@ go_version() { command -v go >/dev/null 2>&1 && goenv go version 2>/dev/null | g
 # ver_ge <a> <b>: バージョン a が b 以上か (1.25 は 1.25.0 として比べる)
 ver_ge() { awk -v a="$1" -v b="$2" 'BEGIN { split(a, x, "."); split(b, y, "."); for (i = 1; i <= 3; i++) { if (x[i] + 0 > y[i] + 0) exit 0; if (x[i] + 0 < y[i] + 0) exit 1 } exit 0 }'; }
 # token_ok: token のファイルがあり、空でなく、シンボリックリンクでないか
-token_ok() { [ -s "$TOKEN_FILE" ] && [ ! -L "$TOKEN_FILE" ]; }
+token_ok() { [ -f "$TOKEN_FILE" ] && [ -s "$TOKEN_FILE" ] && [ ! -L "$TOKEN_FILE" ]; }
 # token_perm_ok: token のファイルが、所有者だけが読み書きできる (600) か
 token_perm_ok() { find "$TOKEN_FILE" -prune -perm 600 2>/dev/null | has .; }
 # built: 固定したコミットでビルドしたバイナリがあるか
@@ -61,7 +64,7 @@ built() { [ -x "$BIN" ] && [ "$(cat "$S/bin/rhkcs-mcp.commit" 2>/dev/null)" = "$
 goenv() {
   own_dir "$S/go/home/.config" "$S/go/tmp"
   HOME="$S/go/home" XDG_CONFIG_HOME="$S/go/home/.config" GOPATH="$S/go" GOMODCACHE="$S/go/pkg/mod" GOCACHE="$S/go/cache" GOTMPDIR="$S/go/tmp" TMPDIR="$S/go/tmp" \
-  GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS="-mod=readonly -modcacherw" "$@"
+  GOWORK=off GOTOOLCHAIN=local CGO_ENABLED=0 GOFLAGS="-mod=readonly -modcacherw" "$@"
 }
 
 # --- check ---
@@ -83,7 +86,7 @@ cmd_check() {
     next="${next:-$T build}"
   fi
   if token_ok && token_perm_ok; then echo "[OK] token: ${TOKEN_FILE#$TOP/}"
-  elif token_ok; then echo "[NG] token: ${TOKEN_FILE#$TOP/} の権限が 600 ではありません"; ng=1; next="${next:-chmod 600 ${TOKEN_FILE#$TOP/}}"
+  elif token_ok; then echo "[NG] token: ${TOKEN_FILE#$TOP/} の権限が 600 ではありません"; ng=1; next="${next:-$T permissions}"
   elif [ -L "$TOKEN_FILE" ]; then echo "[NG] token: ${TOKEN_FILE#$TOP/} がシンボリックリンクです"; ng=1; next="${next:-${TOKEN_FILE#$TOP/} を消してから、$NEXT_TOKEN}"
   else
     echo "[NG] token がありません (${TOKEN_FILE#$TOP/})"; ng=1
@@ -132,7 +135,7 @@ cmd_build() {
   [ -z "$st" ] || die "${S#$TOP/}/src に、固定したコミットとの違いがあります (${S#$TOP/}/src を消してから、もう一度実行する)"
   echo "ビルドします: コミット ${PIN:0:7} (Go $v)"
   ( cd "$S/src" && goenv go build -trimpath -o "$BIN" ./pkg/mcp/rhkcs-mcp ) || die "ビルドできません (上のエラーを見る)"
-  echo "$PIN" > "$S/bin/rhkcs-mcp.commit"
+  echo "$PIN" > "$S/bin/rhkcs-mcp.commit" || die "ビルド記録を保存できません"
   echo "[OK] ビルドしました: ${BIN#$TOP/}"
   if token_ok; then echo "次: $T test"
   else echo "次: $NEXT_TOKEN"; fi
@@ -212,11 +215,11 @@ cmd_token() {
 cmd_run() {
   # 固定したコミットでビルドしたものだけを起動する (PIN を変えた後に、古いバイナリが動かないように)
   built || { echo "rhkcs-mcp が、固定したコミット (${PIN:0:7}) でビルドされていません ($T build)" >&2; exit 1; }
-  token_ok || { echo "token がありません (別のターミナルで $T token)" >&2; exit 1; }
-  [ ! -L "$S" ] || { echo "${S#$TOP/} がシンボリックリンクです" >&2; exit 1; }   # die は標準出力に出すため使わない
+  token_ok && token_perm_ok || { echo "token が無いか、権限が 600 ではありません ($T check)" >&2; exit 1; }
+  [ ! -L "$S" ] || { echo "${S#$TOP/} がシンボリックリンクです" >&2; exit 1; }
   RH_API_OFFLINE_TOKEN="$(head -1 "$TOKEN_FILE")"
   export RH_API_OFFLINE_TOKEN
-  mkdir -p "$S/log"
+  own_dir "$S/log"
   exec "$BIN" -log-dir "$S/log"
 }
 
@@ -224,7 +227,7 @@ cmd_run() {
 cmd_test() {
   local out res mark
   built || die "rhkcs-mcp が、固定したコミット (${PIN:0:7}) でビルドされていません (次: $T build)"
-  token_ok || die "token がありません (次: 別のターミナルで $T token)"
+  token_ok && token_perm_ok || die "token が無いか、権限が 600 ではありません (次: $T check)"
   echo "MCP サーバーを起動し、search_kcs で検索します (最大 20 秒)"
   own_dir "$S"
   mark="$S/.test-done"; rm -f "$mark"
@@ -234,18 +237,22 @@ cmd_test() {
     printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
     printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"search_kcs","arguments":{"query":"etcd","rows":1}}}'
     for _ in $(seq 1 40); do [ -e "$mark" ] && break; sleep 0.5; done
-  } | bash "$TOP/$SCRIPT" run 2>&1 | awk -v d="$mark" '{ print } /"id":2[,}]/ { printf "" > d; close(d); exit }' )"
+  } | bash "$TOP/$SCRIPT" run 2>&1 | awk -v d="$mark" '{ print } /"id"[[:space:]]*:[[:space:]]*2[[:space:]]*[,}]/ { printf "" > d; close(d); exit }' )"
   rm -f "$mark"
-  res="$(printf '%s\n' "$out" | grep -E '"id":2[,}]' | head -1)"
+  res="$(printf '%s\n' "$out" | grep -E '"id"[[:space:]]*:[[:space:]]*2[[:space:]]*[,}]' | head -1)"
   if [ -z "$res" ]; then
     echo "[NG] search_kcs の応答がありません"
     printf '%s\n' "$out" | grep -v '^{' | head -5 | cut -c1-200
     echo "案内: ログは ${S#$TOP/}/log/ にある"
     return 1
   fi
-  if printf '%s\n' "$res" | has -E '"isError":true|"error":\{'; then
+  if printf '%s\n' "$res" | has -E '"isError"[[:space:]]*:[[:space:]]*true|"error"[[:space:]]*:[[:space:]]*\{'; then
     echo "[NG] search_kcs がエラーを返しました: $(printf '%s\n' "$res" | grep -oE '"(text|message)":"[^"]{0,200}' | head -1)"
     echo "案内: token が正しいか、失効していないか (offline token は 30 日使わないと失効する) を確かめる。作り直したら、別のターミナルで $T token を実行する"
+    return 1
+  fi
+  if ! printf '%s\n' "$res" | has -E 'https://access\.redhat\.com/[a-z]+/[0-9]+'; then
+    echo "[NG] 検索結果がありません"
     return 1
   fi
   # 結果のテキストから、1 件目の題名と URL を出す
@@ -257,11 +264,20 @@ cmd_test() {
 
 usage() { awk 'NR == 1 {next} /^#/ {sub(/^# ?/, ""); print; next} {exit}' "$0"; exit 3; }
 case "${1:-}" in
+  check|build|token|run|test|update|permissions) [ "$#" = 1 ] || usage;;
+  *) usage;;
+esac
+# 保存先の直下だけを検査し、シンボリックリンクなら書き込み前に止める。
+for path in "$S" "$S/go" "$S/bin" "$S/log" "$S/src" "$S/token"; do
+  [ ! -L "$path" ] || die "${path#$TOP/} がシンボリックリンクです (消してから、もう一度実行する)"
+done
+case "${1:-}" in
   check) cmd_check;;
   build) cmd_build;;
   token) cmd_token;;
   run)   cmd_run;;
   test)  cmd_test;;
   update) cmd_update;;
+  permissions) token_ok || die "token がありません"; chmod 600 "$TOKEN_FILE";;
   *) usage;;
 esac
