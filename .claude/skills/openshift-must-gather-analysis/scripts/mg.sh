@@ -36,12 +36,18 @@
 #   mg.sh lint     <case>                    checklist.md と report.md を確認する (必須の節、TODO、事象と確認事項の一致、確認事項ごとの調査項目と回答、
 #                                            調査項目の結果、根拠のファイルと行が実在し引用と一致するか、事実の番号、
 #                                            未確認事項のコマンドと情報元の URL (無ければ WARN))
+#                                            NG は修正する。情報元・コマンドが無い WARN は理由と代替方法を報告書・完了報告に添えて残せる
+#                                            list の表示: lint の通常の NG (終了コード 1)=作成中、WARN のみ=要確認、どちらも無し=完成。
+#                                            報告書・確認事項を含め安全に読めないケースや、lint を開始できないケースは NG として次へ進む
+#   不正な検索式は [NG]。検索結果や omc の出力はリポジトリ内の一時ファイルで処理する。
 #   (終了コード: 0=OK 1=lint などの NG 3=開始できない 10=omc が無い)
 #
 # 環境変数:
 #   ANALYSIS_DIR  調査 (ケース) を置くディレクトリ (既定: リポジトリのルートの must-gather-analyses/。ルートはスクリプトの場所から決める)
 #   MG_MAX        各サブコマンドが表示する最大行数 (既定: 50)
 #   OMCCONFIG     omc の設定ファイル (どの must-gather を使うか)。既定: must-gather-analyses/.omc/omc.json (~/.omc の代わり)
+#   ANALYSIS_DIR と OMCCONFIG はリポジトリ内に限定し、途中のシンボリックリンクも拒否する。
+#   相対パスを指定した場合は、リポジトリのルートを基準にする。
 #
 # ケースのディレクトリ: must-gather-analyses/<case>/ の must-gather/ (調べる対象)、checklist.md (事象・確認事項・調査項目)、report.md (調査報告)
 #
@@ -51,6 +57,7 @@ set -uo pipefail
 # リポジトリのルートは、実行した場所ではなく、スクリプトの場所 (.claude/skills/<skill>/scripts/) から決める
 TOP="$(cd "$(dirname "$0")/../../../.." && pwd)"
 DIR="${ANALYSIS_DIR:-$TOP/must-gather-analyses}"
+case "$DIR" in /*) ;; *) DIR="$TOP/$DIR";; esac
 OMCCONFIG="${OMCCONFIG:-$DIR/.omc/omc.json}"
 case "$OMCCONFIG" in /*) ;; *) OMCCONFIG="$TOP/$OMCCONFIG";; esac
 export OMCCONFIG
@@ -60,6 +67,30 @@ SECTIONS="概要 事象 確認事項 時系列 確認した事実 原因 対処�
 CL_SECTIONS="事象 確認事項 調査項目"                                                  # checklist.md の節
 
 die() { echo "[NG] $*"; exit 3; }
+# 書き先はリポジトリ内だけ。存在する途中のリンクも拒否する。
+repo_path() {
+  local p="$1" rest part cur="$TOP"
+  case "$p" in "$TOP"/*) rest="${p#"$TOP"/}";; *) die "リポジトリ外のパスは使えません: $p";; esac
+  case "/$rest/" in */../*) die ".. を含むパスは使えません: $p";; esac
+  while [ -n "$rest" ]; do
+    part="${rest%%/*}"; if [ "$rest" = "$part" ]; then rest=""; else rest="${rest#*/}"; fi
+    cur="$cur/$part"
+    [ ! -L "$cur" ] || die "シンボリックリンクを含むパスは使えません: $cur"
+  done
+}
+init_work() {
+  repo_path "$DIR"; repo_path "$OMCCONFIG"
+  mkdir -p "$DIR" || die "作業場所を作れません: $DIR"
+  WORK="$(mktemp -d "$DIR/.mg-work.XXXXXX")" || die "一時ディレクトリを作れません"
+  # sort などの一時ファイルも、この呼び出し専用の場所に置く。
+  TMPDIR="$WORK"; export TMPDIR
+  trap 'rm -f "$WORK"/*; rmdir "$WORK"' EXIT
+}
+valid_regex() {
+  local rc=0
+  grep -E -e "$1" /dev/null >/dev/null 2>&1 || rc=$?
+  [ "$rc" -le 1 ] || die "正規表現が正しくありません: $1"
+}
 # has <grep の引数>: 標準入力に一致する行があるか。pipefail のもとで grep -q は偽になることがあるため、入力を最後まで読む
 has() { grep "$@" >/dev/null; }
 # rel <パス>: must-gather のルートからの相対パスで、ルートの外を指さない (絶対パスや .. を含まない) ことを確かめる
@@ -78,6 +109,8 @@ root() {
   [ -n "$best" ] && echo "$best"
 }
 need_root() {
+  repo_path "$DIR/$SLUG/must-gather"
+  no_outside_links "資料を読みません"
   R="$(root "$SLUG")" || { echo "[NG] $DIR/$SLUG/must-gather/ に must-gather が見つかりません (cluster-scoped-resources を含むディレクトリ)"; echo "案内: must-gather のアーカイブか、展開したディレクトリを $DIR/$SLUG/must-gather/ に置いてから、mg.sh prepare $SLUG を実行する"; exit 3; }
   RR="$(cd -P "$R" && pwd -P)"   # シンボリックリンクを辿った、ルートの実際の場所
 }
@@ -96,11 +129,11 @@ need_omc() { command -v omc >/dev/null 2>&1 || { echo "[NG] omc がありませ�
 #   (どのリンクも、そのディレクトリの下だけを指していれば、リンクを辿っても must-gather/ の外には出ない)
 no_outside_links() {
   local l t
-  while IFS= read -r l; do
+  while IFS= read -r -d '' l; do
     t="$(readlink "$l")"
     case "/$t/" in //*|*/../*) echo "[NG] must-gather の外を指す可能性のあるシンボリックリンクがあるため、$1: ${l#"$DIR"/} -> $t"
       echo "案内: must-gather を取り直すか、そのシンボリックリンクを消すかをユーザーに聞く"; exit 3;; esac
-  done < <(find "$DIR/$SLUG/must-gather" -type l 2>/dev/null)
+  done < <(find "$DIR/$SLUG/must-gather" -type l -print0 2>/dev/null)
 }
 # use_mg: omc の対象を、このケースの must-gather にする (omc use は全体の設定なので、毎回選び直す)
 use_mg() { need_root; need_omc; no_outside_links "omc では読みません"; mkdir -p "$(dirname "$OMCCONFIG")"; omc use "$R" >/dev/null 2>&1 || die "omc use に失敗しました: $R"; }
@@ -120,11 +153,10 @@ lim() {
 }
 # og <omc の引数>: omc を実行する。取得できないとき (エラー) は、「該当なし」と区別できるように [WARN] を出す
 og() {
-  local out
-  if ! out="$(omc "$@" 2>&1)" || printf '%s\n' "$out" | head -1 | has '^Error'; then
-    echo "[WARN] 取得できません (omc $*): $(printf '%s\n' "$out" | head -1 | cut -c1-200)"; return 0
+  if ! omc "$@" > "$WORK/omc" 2>&1 || head -1 "$WORK/omc" | has -E '^Error'; then
+    echo "[WARN] 取得できません (omc $*): $(head -1 "$WORK/omc" | cut -c1-200)"; return 0
   fi
-  printf '%s\n' "$out"
+  cat "$WORK/omc"
 }
 # version_of <root>: must-gather のクラスタのバージョン (ClusterVersion の status.desired.version)
 version_of() {
@@ -170,7 +202,7 @@ loose() {
   for f in "$DIR"/*; do
     [ -e "$f" ] || continue
     [ -d "$f/must-gather" ] && continue
-    if [ -d "$f" ] && find "$f" -maxdepth 6 -type d -name cluster-scoped-resources 2>/dev/null | has .; then echo "$f"
+    if [ -d "$f" ] && find "$f" -maxdepth 6 -type d -name cluster-scoped-resources 2>/dev/null | has -E .; then echo "$f"
     elif [ -f "$f" ]; then case "$f" in *.tar.gz|*.tgz|*.tar.xz|*.tar|*.zip) echo "$f";; esac; fi
   done
 }
@@ -192,17 +224,40 @@ cmd_check() {
 }
 
 cmd_list() {
-  local c r st f m
+  local c r st f m rc
   while IFS= read -r f; do echo "[WARN] ケースに入っていない must-gather: ${f#$DIR/} (mg.sh new で、新しいケースに移す)"; done < <(loose)
   ls -d "$DIR"/*/must-gather >/dev/null 2>&1 || { echo "$DIR/ にケースはありません"; return 0; }
   echo "| ケース | must-gather | 取得日時 | バージョン | 報告書 |"
   echo "| --- | --- | --- | --- | --- |"
   for c in "$DIR"/*/must-gather; do
     c="$(basename "$(dirname "$c")")"
+    SLUG="$c"
+    if ! (
+      repo_path "$DIR/$c/must-gather"; no_outside_links "ケースを読みません"
+      for f in "$DIR/$c/report.md" "$DIR/$c/checklist.md"; do
+        repo_path "$f"
+        if [ -e "$f" ]; then
+          [ -f "$f" ] && [ -r "$f" ] || die "安全に読める通常のファイルではありません: $f"
+        fi
+      done
+    ) > "$WORK/case-error" 2>&1; then
+      echo "| $c | 読み取り不可 | - | - | NG |"
+      cat "$WORK/case-error"
+      continue
+    fi
     r="$(root "$c")"
     if [ ! -f "$DIR/$c/report.md" ]; then st=なし
-    elif ! ( SLUG="$c"; cmd_lint ) 2>&1 | has -E '^\[(NG|WARN)\]'; then st=完成
-    else st=作成中; fi
+    elif ( cmd_lint ) > "$WORK/lint" 2>&1; then
+      if has -E '^\[WARN\]' < "$WORK/lint"; then st=要確認; else st=完成; fi
+    else
+      rc=$?
+      if [ "$rc" = 1 ]; then st=作成中
+      else
+        echo "| $c | 読み取り不可 | - | - | NG |"
+        cat "$WORK/lint"
+        continue
+      fi
+    fi
     m="${r#$DIR/$c/must-gather/}"; [ "${m%%/*}" = "$m" ] || m="${m%%/*}/…"   # 長いディレクトリ名 (quay-io-…sha256-…) は省く
     if [ -n "$r" ]; then echo "| $c | $m | $(taken_at "$r") | $(version_of "$r") | $st |"
     else echo "| $c | 見つからない | - | - | $st |"; fi
@@ -230,13 +285,15 @@ cmd_new() {
 cmd_prepare() {
   local c="$DIR/$SLUG/must-gather" a d lst
   [ -d "$c" ] || die "$c がありません (先に mg.sh new)"
+  repo_path "$c"
+  no_outside_links "アーカイブを展開しません"
   # 展開済みの must-gather が無ければ、置かれたアーカイブを展開する
   if ! root "$SLUG" >/dev/null; then
     # must-gather/ の外 (ケースのディレクトリの直下) に置かれた must-gather は、must-gather/ に移す
     for a in "$DIR/$SLUG"/*; do
       case "${a##*/}" in must-gather|checklist.md|report.md) continue;; esac
       [ -e "$a" ] && [ ! -L "$a" ] || continue
-      if [ -d "$a" ]; then find "$a" -maxdepth 6 -type d -name cluster-scoped-resources 2>/dev/null | has . || continue
+      if [ -d "$a" ]; then find "$a" -maxdepth 6 -type d -name cluster-scoped-resources 2>/dev/null | has -E . || continue
       else case "$a" in *.tar.gz|*.tgz|*.tar.xz|*.tar|*.zip) ;; *) continue;; esac; fi
       mv "$a" "$c/" || die "移せません: $a"
       echo "移しました: ${a#$DIR/} → $SLUG/must-gather/"
@@ -314,7 +371,7 @@ cmd_overview() {
   og prom rules -s firing -o wide | awk 'NR == 1 || $2 != "Watchdog"' | lim
   echo; echo "## Warning イベント (Namespace・理由・メッセージの先頭ごとの件数。多い順)"
   # 同じイベントが大量に出ると一覧が埋まるため、種類ごとにまとめる
-  og get events -A | awk 'NR > 1 && $3 == "Warning" {
+  og get events -A | awk '/^\[WARN\]/ { print; next } NR > 1 && $3 == "Warning" {
       m = ""; for (i = 6; i <= NF; i++) m = m " " $i
       # IP や ID の違いでは分けない
       gsub(/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/, "<IP>", m); gsub(/[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]+/, "<ID>", m)
@@ -326,24 +383,25 @@ cmd_overview() {
 }
 
 cmd_grep() {
-  local re="${1:-}" sub="${2:-.}" out n cnt
+  local re="${1:-}" sub="${2:-.}" n rc=0
   [ -n "$re" ] || die "usage: mg.sh grep <case> <regex> [<subpath>]"
+  valid_regex "$re"
   rel "$sub"; need_root
   [ -e "$R/$sub" ] && [ ! -L "$R/$sub" ] && inside "$R/$sub" || die "$sub がありません (must-gather のルートからの相対パスで指定する。シンボリックリンクや、ルートの外を指すものは検索しない)"
-  # 一致が大量にあり得るため、先頭の MAX+1 件だけを受け取る
-  out="$(cd "$R" && grep -rnHIE --exclude='*.gz' -e "$re" "$sub" 2>/dev/null | head -n "$((MAX + 1))" | sed 's|^\./||')"
-  n="$(printf '%s\n' "$out" | grep -c .)"
+  # まず件数だけをファイルに受け、検索の失敗を一致なしと区別する。
+  (cd "$R" && grep -rcHIE --exclude='*.gz' -e "$re" -- "$sub") > "$WORK/counts" 2> "$WORK/grep-error" || rc=$?
+  [ "$rc" -le 1 ] || die "検索できません: $sub ($(head -1 "$WORK/grep-error" | cut -c1-200))"
+  n="$(awk -F: '{ n += $NF } END { print n + 0 }' "$WORK/counts")"
   [ "$n" -gt 0 ] || { echo "(該当なし)"; return 0; }
   if [ "$n" -gt "$MAX" ]; then
-    # 多すぎるときは中身を出さず、ファイルごとの件数を出す (ファイル 1 つにつき 1 行なので小さい)
-    cnt="$(cd "$R" && grep -rcHIE --exclude='*.gz' -e "$re" "$sub" 2>/dev/null | grep -v ':0$' | sed 's|^\./||')"
-    echo "全 $(printf '%s\n' "$cnt" | awk -F: '{ t += $NF } END { print t }') 件。ファイルごとの件数 (多い順に 20 件):"
-    printf '%s\n' "$cnt" | awk -F: '{ c = $NF; sub(/:[0-9]+$/, ""); printf "%7d %s\n", c, $0 }' | sort -rn | head -n 20
+    echo "全 $n 件。ファイルごとの件数 (多い順に 20 件):"
+    awk -F: '$NF > 0 { c = $NF; sub(/:[0-9]+$/, ""); sub(/^\.\//, ""); printf "%7d %s\n", c, $0 }' "$WORK/counts" | sort -rn | awk 'NR <= 20'
     echo "次: 正規表現かパス (<subpath>) で $MAX 件以下に絞り込む"
     return 0
   fi
   # 内容だけを 300 文字で切る (パスが長くても、内容が切れないように)
-  printf '%s\n' "$out" | awk '{ if (match($0, /^[^:]*:[0-9]+:/)) print substr($0, 1, RLENGTH) substr($0, RLENGTH + 1, 300); else print substr($0, 1, 300) }'
+  (cd "$R" && grep -rnHIE --exclude='*.gz' -e "$re" -- "$sub") |
+    awk '{ sub(/^\.\//, ""); if (match($0, /^[^:]*:[0-9]+:/)) print substr($0, 1, RLENGTH) substr($0, RLENGTH + 1, 300); else print substr($0, 1, 300) }' || die "検索できません: $sub"
   echo "次: 根拠にする行は mg.sh show $SLUG <file> <line> で前後を確かめる"
 }
 
@@ -373,16 +431,18 @@ cmd_logs() {
     elif [ -z "$c" ] && [ -z "$re" ] && printf '%s\n' "$cs" | has -xF -- "$a"; then c="$a"
     else re="$a"; fi
   done
+  [ -z "$re" ] || valid_regex "$re"
   if [ -z "$c" ]; then
-    [ "$(printf '%s\n' "$cs" | grep -c .)" = 1 ] || { echo "[NG] コンテナを指定する: $(printf '%s ' $cs)"; exit 3; }
+    [ "$(printf '%s\n' "$cs" | grep -cE .)" = 1 ] || { echo "[NG] コンテナを指定する: $(printf '%s\n' "$cs" | tr '\n' ' ')"; exit 3; }
     c="$cs"
   fi
   f="$d/$c/$c/logs/$([ $prev = 1 ] && echo previous || echo current).log"
   ok_file "$f" || { echo "[NG] $f がありません"; [ $prev = 0 ] || echo "案内: 再起動前のログは取得されていない"; exit 3; }
   # ログを取得できていなければ、Pod の YAML にある終了メッセージ (terminated.message。小さい) を使う
-  if head -1 "$R/$f" | has '^unable to retrieve container logs'; then
+  if head -1 "$R/$f" | has -E '^unable to retrieve container logs'; then
     echo "[WARN] ログは取得されていません ($f: $(head -1 "$R/$f" | cut -c1-80))"
     f="$d/$pod.yaml"
+    need_file "$f"
     out="$(term_msg "$R/$f" "$c" "$([ $prev = 1 ] && echo lastState || echo state)")"
     [ -n "$out" ] || { echo "案内: 終了メッセージもありません。omc describe pod $pod -n $ns で状態を確かめる"; return 0; }
     echo "代わりに、コンテナの終了メッセージ (terminated.message) を表示します: $f"
@@ -428,11 +488,12 @@ line_time() {
 # count <regex> <file> [hour|minute]: regex に一致する行を、1 時間ごと (既定) か 1 分ごとに数える
 #   ログの時刻は、Pod のログ (YYYY-MM-DDTHH:MM:SS…) と、ノードのサービスログ (Mon DD HH:MM:SS…) の形に対応する
 cmd_count() {
-  local re="${1:-}" f="${2:-}" unit="${3:-hour}" out n
+  local re="${1:-}" f="${2:-}" unit="${3:-hour}" n
   [ -n "$re" ] && [ -n "$f" ] || die "usage: mg.sh count <case> <regex> <file> [hour|minute]"
   case "$unit" in hour|minute) ;; *) die "単位は hour か minute にする: $unit";; esac
   need_root; need_file "$f"
-  out="$(grep -E -e "$re" "$R/$f" | awk -v u="$unit" '
+  valid_regex "$re"
+  grep -E -e "$re" "$R/$f" | awk -v u="$unit" '
     {
       if (match($0, /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]/)) { t = substr($0, 1, 16); sub(/T/, " ", t) }
       else if (match($0, /^[A-Z][a-z][a-z] [ 0-9][0-9] [0-9][0-9]:[0-9][0-9]/)) t = substr($0, 1, 12)
@@ -442,11 +503,11 @@ cmd_count() {
       if (!(t in c)) o[++k] = t
       c[t]++
     }
-    END { for (i = 1; i <= k; i++) printf "%7d  %s\n", c[o[i]], o[i] }')"
-  n="$(printf '%s\n' "$out" | grep -c .)"
+    END { for (i = 1; i <= k; i++) printf "%7d  %s\n", c[o[i]], o[i] }' > "$WORK/count"
+  n="$(awk 'END { print NR }' "$WORK/count")"
   [ "$n" -gt 0 ] || { echo "(該当なし: ${f}。ログの期間: $(log_range "$R/$f"))"; return 0; }
   echo "  件数  時刻 (${f}。ログの期間: $(log_range "$R/$f"))"
-  printf '%s\n' "$out" | head -n "$MAX"
+  head -n "$MAX" "$WORK/count"
   [ "$n" -le "$MAX" ] || echo "... (全 $n 行のうち先頭 $MAX 行。regex に時刻を入れて絞り込む)"
   echo "次: 増えた時刻の前後を mg.sh grep $SLUG '<時刻>' $f で見る"
 }
@@ -509,7 +570,7 @@ cmd_pod() {
     for lf in current previous; do
       ok_file "$d/$c/$c/logs/$lf.log" || continue
       [ "$lf" = current ] || [ -s "$R/$d/$c/$c/logs/$lf.log" ] || continue   # 再起動前のログは、中身があるときだけ出す
-      if head -1 "$R/$d/$c/$c/logs/$lf.log" | has '^unable to retrieve'; then echo "  $c ($lf): 取得されていない (終了メッセージは mg.sh logs で見る)"
+      if head -1 "$R/$d/$c/$c/logs/$lf.log" | has -E '^unable to retrieve'; then echo "  $c ($lf): 取得されていない (終了メッセージは mg.sh logs で見る)"
       else echo "  $c ($lf): $(log_range "$R/$d/$c/$c/logs/$lf.log")"; fi
     done
   done
@@ -518,20 +579,20 @@ cmd_pod() {
 
 # errors <file>: klog 形式のエラー (E) と致命的エラー (F) を、ソースの場所と内容ごとに数える (Pod のログ、kubelet などのサービスログ)
 cmd_errors() {
-  local f="${1:-}" out
+  local f="${1:-}"
   [ -n "$f" ] || die "usage: mg.sh errors <case> <file>"
   need_root; need_file "$f"
   echo "ファイル: $f (期間: $(log_range "$R/$f"))"
-  out="$(awk '
+  awk '
     /(^| )[EF][0-9][0-9][0-9][0-9] / {
       n++; if (match($0, /[A-Za-z0-9_]+\.go:[0-9]+\] /)) key = substr($0, RSTART, RLENGTH + 80); else key = substr($0, 1, 100)
       gsub(/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(:[0-9]+)?/, "<IP>", key); gsub(/[0-9a-f]+-[0-9a-f]+-[0-9a-f]+-[0-9a-f]+-[0-9a-f]+/, "<UUID>", key)
       if (!(key in c)) first[key] = NR
       c[key]++; last[key] = NR
     }
-    END { printf "全 %d 件\n", n; for (k in c) printf "%7d  [%d〜%d 行目]  %s\n", c[k], first[k], last[k], k }' "$R/$f")"
-  printf '%s\n' "$out" | head -1
-  printf '%s\n' "$out" | tail -n +2 | sort -rn | head -n 15
+    END { printf "全 %d 件\n", n; for (k in c) printf "%7d  [%d〜%d 行目]  %s\n", c[k], first[k], last[k], k }' "$R/$f" > "$WORK/errors"
+  head -1 "$WORK/errors"
+  tail -n +2 "$WORK/errors" | sort -rn | awk 'NR <= 15'
   echo "次: 種類ごとの時刻の変化は mg.sh count $SLUG '<内容の一部>' $f minute、根拠の行は mg.sh show $SLUG $f <行>"
 }
 
@@ -545,8 +606,9 @@ term_msg() {
     /^  - / { flush(); sec = ""; term = 0; cap = 0 }
     cap && /^          / { buf = buf NR "\t" substr($0, 11) "\n"; next }
     { cap = 0 }
-    /^    name: / { name = $2 }
-    /^    [a-zA-Z]+:/ { sec = $1; sub(/:$/, "", sec) }
+    { l = $0; sub(/^  - /, "    ", l) }
+    l ~ /^    name: / { name = l; sub(/^    name: */, "", name) }
+    l ~ /^    [a-zA-Z]+:/ { sec = l; sub(/^ */, "", sec); sub(/:.*/, "", sec) }
     /^      [a-zA-Z]+:/ { term = ($1 == "terminated:") }
     sec == want && term && /^        message: *\|/ { cap = 1; next }
     sec == want && term && /^        message: / { m = $0; sub(/^ *message: */, "", m); buf = buf NR "\t" m "\n" }
@@ -568,16 +630,16 @@ cmd_ns() {
       n="$(basename "$d")"
       case "$n" in openshift|openshift-*|kube-*|default) continue;; esac
       [ ! -L "${d%/}" ] || continue   # シンボリックリンクの先 (must-gather の外かもしれない) は数えない
-      p="$(find "$d/pods" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | grep -c .)"
-      l="$(find "$d/pods" -name current.log -size +0 2>/dev/null | grep -c .)"
+      p="$(find "$d/pods" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | grep -cE .)"
+      l="$(find "$d/pods" -name current.log -size +0 2>/dev/null | grep -cE .)"
       echo "| $n | $p | $l |"
     done
     echo "案内: OpenShift 以外 (openshift-*、kube-*、default を除く) の Namespace。Pod が 0 なら、その Namespace の Pod とログは must-gather に無い"
-    echo "案内: 事象に関係する Namespace の情報が無ければ、製品の must-gather (oc adm must-gather --image=<製品の must-gather イメージ>)、無ければ oc adm inspect ns/<ns> の結果を依頼するか、「未確認事項」に回す"
+    echo "案内: 事象に関係する Namespace の情報がこの must-gather に無ければ、情報が不足していることを伝え、「未確認事項」に回す"
     return 0
   fi
   name "$ns"; d="$R/namespaces/$ns"
-  [ -d "$d" ] && [ ! -L "$d" ] && inside "$d" || { echo "[NG] namespaces/$ns がありません (must-gather に含まれていない)"; echo "案内: 製品の must-gather (oc adm must-gather --image=<製品の must-gather イメージ>)、無ければ oc adm inspect ns/$ns の結果を依頼するか、「未確認事項」に回す"; exit 3; }
+  [ -d "$d" ] && [ ! -L "$d" ] && inside "$d" || { echo "[NG] namespaces/$ns がありません (must-gather に含まれていない)"; echo "案内: この must-gather には Namespace ${ns} の情報が無い (情報が不足している) ので、「未確認事項」に回す"; exit 3; }
   echo "## namespaces/$ns に含まれるリソース"
   # clusterserviceversions は、全 Namespace にコピーされる Operator の情報のため除く
   find "$d" -mindepth 2 -maxdepth 3 -name '*.yaml' -not -path "$d/pods/*" -not -path "$d/operators.coreos.com/clusterserviceversions/*" | sed "s|^$d/||" | LC_ALL=C sort | lim
@@ -588,7 +650,7 @@ cmd_ns() {
     for c in "$d/pods/$pod"/*/; do
       c="$(basename "$c")"; f="$d/pods/$pod/$c/$c/logs/current.log"
       ok_file "namespaces/$ns/pods/$pod/$c/$c/logs/current.log" || continue
-      if head -1 "$f" | has '^unable to retrieve'; then echo "  $c: ログは取得されていない"; else echo "  $c: $(log_range "$f")"; fi
+      if head -1 "$f" | has -E '^unable to retrieve'; then echo "  $c: ログは取得されていない"; else echo "  $c: $(log_range "$f")"; fi
     done
   done | lim
 }
@@ -596,6 +658,7 @@ cmd_ns() {
 # events [<ns>] [<regex>]: イベントを時刻順に表示する
 cmd_events() {
   local ns="${1:--A}" re="${2:-}"
+  [ -z "$re" ] || valid_regex "$re"
   use_mg
   # regex は grep -E で解釈する (見出しの行は残す)
   if [ "$ns" = "-A" ]; then og events -A; else og events -n "$ns"; fi | { IFS= read -r h && printf '%s\n' "$h"; if [ -n "$re" ]; then grep -E -e "$re"; else cat; fi; } | lim
@@ -668,15 +731,20 @@ quotes() {
     while (match(s, /`[^` ]+\/[^` ]+:[0-9]+(-[0-9]+)?`/)) {
       ref = substr(s, RSTART + 1, RLENGTH - 2); s = substr(s, RSTART + RLENGTH)
       if (index(ref, "://")) continue   # URL の引用 (refs と同じく、パスとして扱わない)
-      t = s; sub(/^ */, "", t)
-      if (index(t, "「") != 1) continue
-      t = substr(t, length("「") + 1); e = index(t, "」"); if (!e) continue
+      t = s
       p = ref; sub(/:[0-9]+(-[0-9]+)?$/, "", p)
       r = substr(ref, length(p) + 2); a = r; b = ""
       if (index(r, "-")) { a = substr(r, 1, index(r, "-") - 1); b = substr(r, index(r, "-") + 1) }
       # 「`…`」 (URL や * _ を含む行を、Markdown として解釈させないためのコード表記) は、` を除いて比べる
-      q = substr(t, 1, e - 1); if (length(q) >= 2 && substr(q, 1, 1) == "`" && substr(q, length(q)) == "`") q = substr(q, 2, length(q) - 2)
-      print p us a us b us q
+      while (1) {
+        sub(/^[ \t]*/, "", t)
+        while (index(t, "…") == 1) { t = substr(t, length("…") + 1); sub(/^[ \t]*/, "", t) }
+        if (index(t, "「") != 1) break
+        t = substr(t, length("「") + 1); e = index(t, "」"); if (!e) break
+        q = substr(t, 1, e - 1); t = substr(t, e + length("」"))
+        if (length(q) >= 2 && substr(q, 1, 1) == "`" && substr(q, length(q)) == "`") q = substr(q, 2, length(q) - 2)
+        print p us a us b us q
+      }
     }
   }'
 }
@@ -690,18 +758,19 @@ cmd_lint() {
   local f="$DIR/$SLUG/report.md" cl="$DIR/$SLUG/checklist.md" fail=0 s p a b total n
   ng() { echo "[NG] $*"; fail=1; }
   need_root
+  repo_path "$f"; repo_path "$cl"
   [ -f "$cl" ] || { echo "[NG] 確認事項のファイルがありません: $cl"; echo "次: mg.sh plan $SLUG"; return 1; }
   [ -f "$f" ] || { echo "[NG] 報告書がありません: $f"; echo "次: mg.sh report $SLUG"; return 1; }
-  head -1 "$f" | has '^# ' || ng "report.md の 1 行目に '# 調査報告: …' が必要"
+  head -1 "$f" | has -E '^# ' || ng "report.md の 1 行目に '# 調査報告: …' が必要"
   for s in $SECTIONS; do
-    grep -qx "## $s" "$f" || ng "report.md に '## $s' の節が必要"
+    grep -qxF "## $s" "$f" || ng "report.md に '## $s' の節が必要"
   done
   for s in $CL_SECTIONS; do
-    grep -qx "## $s" "$cl" || ng "checklist.md に '## $s' の節が必要"
+    grep -qxF "## $s" "$cl" || ng "checklist.md に '## $s' の節が必要"
   done
   # 事象と確認事項は checklist.md の写しなので、TODO は checklist.md の側だけで指摘する
-  awk '/^## / { skip = ($0 == "## 事象" || $0 == "## 確認事項") } !skip && /TODO/ { print NR ":" $0 }' "$f" | sed 's/^/[NG] report.md に TODO が残っています: /' | grep . && fail=1
-  grep -n 'TODO' "$cl" | sed 's/^/[NG] checklist.md に TODO が残っています: /' | grep . && fail=1
+  awk '/^## / { skip = ($0 == "## 事象" || $0 == "## 確認事項") } !skip && /TODO/ { print NR ":" $0 }' "$f" | sed 's/^/[NG] report.md に TODO が残っています: /' | grep -E . && fail=1
+  grep -nF 'TODO' "$cl" | sed 's/^/[NG] checklist.md に TODO が残っています: /' | grep -E . && fail=1
   for s in 事象 確認事項; do
     [ "$(section "$f" "$s")" = "$(section "$cl" "$s")" ] || ng "report.md と checklist.md の「${s}」が一致しません (mg.sh report $SLUG で写し直す)"
   done
@@ -711,19 +780,20 @@ cmd_lint() {
     ok_file "$p" || { ng "根拠のファイルがありません (must-gather の外、シンボリックリンクは不可): $p"; continue; }
     total="$(awk 'END { print NR }' "$R/$p")"
     for n in $a $b; do [ "$n" -ge 1 ] && [ "$n" -le "$total" ] || ng "根拠の行がありません: $p:$n (全 $total 行)"; done
+    [ -z "$b" ] || [ "$a" -le "$b" ] || ng "根拠の行範囲が逆です: $p:$a-$b"
   done < <(evidence "$f" | refs)
   [ -n "$(section "$f" 確認した事実 | refs)" ] || ng "'## 確認した事実' に根拠 (\`パス:行\`) がありません"
   # 原因は、根拠を直接書くか、確認した事実の番号 (事実 N) で示す
   [ -n "$(section "$f" 原因 | refs)" ] || section "$f" 原因 | has -E '事実 ?[0-9]' ||
     ng "'## 原因' に根拠 (\`パス:行\` か、確認した事実の番号「事実 N」) がありません"
   # 引用: その行 (範囲) に、引用した記述が本当にあるか。「…」で省略した部分は、区切った各部分を確かめる
-  local q text part ok
+  local q part ok
   while IFS="$US" read -r p a b q; do
     ok_file "$p" || continue
-    text="$(sed -n "${a},${b:-$a}p" "$R/$p")"; ok=1
+    ok=1
     while IFS= read -r part; do
       part="$(printf '%s' "$part" | sed 's/^ *//; s/ *$//')"
-      [ -z "$part" ] || printf '%s' "$text" | has -F -- "$part" || ok=0
+      [ -z "$part" ] || sed -n "${a},${b:-$a}p" "$R/$p" | has -F -- "$part" || ok=0
     done < <(printf '%s\n' "$q" | awk '{ gsub(/…/, "\n"); print }')
     [ $ok = 1 ] || ng "引用が、その行の記述と一致しません: $p:$a${b:+-$b} 「$(printf '%s' "$q" | cut -c1-80)」"
   done < <(evidence "$f" | quotes)
@@ -736,17 +806,17 @@ cmd_lint() {
     printf '%s\n' "$items" | has -E "^- \[[ x]\] $k-[0-9]+\. " || ng "確認事項 $k の調査項目 ($k-1. …) がありません"
     { section "$f" 原因; section "$f" 対処案; } | has -E "確認事項 ?$k([^0-9-]|$)" || ng "確認事項 $k に、'## 原因' か '## 対処案' で答えていません (「確認事項 ${k}」と書いて答える)"
   done
-  printf '%s\n' "$items" | grep -E '^- \[ \] ' | sed 's|^|[NG] 調べていない調査項目があります: |' | grep . && fail=1
-  printf '%s\n' "$items" | grep -E '^- \[x\] ' | grep -vE '→ *(事実 ?[0-9]+|未確認事項)' | sed 's|^|[NG] 調査項目に結果 (→ 事実 N か 未確認事項) がありません: |' | grep . && fail=1
+  printf '%s\n' "$items" | grep -E '^- \[ \] ' | sed 's|^|[NG] 調べていない調査項目があります: |' | grep -E . && fail=1
+  printf '%s\n' "$items" | grep -E '^- \[x\] ' | grep -vE '→ *(事実 ?[0-9]+|未確認事項)' | sed 's|^|[NG] 調査項目に結果 (→ 事実 N か 未確認事項) がありません: |' | grep -E . && fail=1
   # 事実の番号 (事実 N) が、確認した事実の番号付きの項目にあるか
   local facts
   facts="$(section "$f" 確認した事実 | grep -cE '^[0-9]+\. ')"
   for n in $(cat "$f" "$cl" | grep -oE '事実 ?[0-9]+' | grep -oE '[0-9]+' | sort -un); do
     [ "$n" -le "$facts" ] || ng "事実 $n がありません ('## 確認した事実' の番号付きの項目は $facts 件)"
   done
-  [ "$(section "$f" 確認した事実 | refs | wc -l)" -le "$(section "$f" 確認した事実 | quotes | wc -l)" ] ||
+  [ "$(section "$f" 確認した事実 | refs | sort -u | wc -l)" -le "$(section "$f" 確認した事実 | quotes | awk -F "$US" '{ print $1 " " $2 " " $3 }' | sort -u | wc -l)" ] ||
     echo "[WARN] '## 確認した事実' に、引用 (\`パス:行\` 「…」) の無い根拠があります"
-  section "$f" 未確認事項 | has '`' || echo "[WARN] '## 未確認事項' に、確かめるコマンド (\`…\`) がありません (コマンドで確かめられない場合は、確かめる方法を書く)"
+  section "$f" 未確認事項 | has -F '`' || echo "[WARN] '## 未確認事項' に、確かめるコマンド (\`…\`) がありません (コマンドで確かめられない場合は、確かめる方法を書く)"
   section "$f" 情報元 | has -E 'https?://' || echo "[WARN] '## 情報元' に URL がありません (見つからなかった場合は、その旨を書く)"
   [ $fail = 0 ] && echo "[OK] lint"
   return $fail
@@ -756,6 +826,7 @@ cmd_lint() {
 
 usage() { awk 'NR == 1 {next} /^#/ {sub(/^# ?/, ""); print; next} {exit}' "$0"; exit 3; }
 CMD="${1:-}"; SLUG="${2:-}"
+case "$CMD" in check|list|new|prepare|plan|items|overview|ns|cond|pod|logs|errors|count|events|grep|show|report|lint) init_work;; *) usage;; esac
 case "$CMD" in
   check) cmd_check;;
   list)  cmd_list;;
@@ -763,6 +834,8 @@ case "$CMD" in
   prepare|plan|items|overview|ns|cond|pod|logs|errors|count|events|grep|show|report|lint)
     [[ $SLUG =~ ^[a-z0-9][a-z0-9._-]*$ ]] || die "usage: mg.sh $CMD <case> (ケース名は英小文字・数字・._-)"
     [ -d "$DIR/$SLUG" ] || die "$DIR/$SLUG がありません (先に mg.sh new)"
+    repo_path "$DIR/$SLUG"
+    for output in checklist.md report.md report.md.tmp; do repo_path "$DIR/$SLUG/$output"; done
     "cmd_$CMD" "${@:3}";;
   *) usage;;
 esac
