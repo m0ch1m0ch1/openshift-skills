@@ -39,10 +39,10 @@ AskUserQuestion で確認し、回答なしに進めない。既に得た承認�
 ## 3. 手順の作成
 
 1. **MCP の確認**: Red Hat ドキュメントの MCP（rhdocs: `mcp__rhdocs__redhat_docs_search` と `mcp__rhdocs__redhat_docs_fetch`）と、Red Hat ナレッジベースの MCP（rhkcs: `mcp__rhkcs__search_kcs` と `mcp__rhkcs__get_kcs`）が使えるかを確かめる。ツールの一覧に無ければ ToolSearch で `rhdocs`・`rhkcs` を探す（Claude Code が無効・使えないと知らせていれば、探さずに使えないとする。`mcp__rhdocs__authenticate` しか無ければ、rhdocs は認証されていないので使えないとし、自分で認証を始めない）。使えないものがあれば、「ユーザーに確認すること」の「3. 手順の作成の最初」を確認する。
-   - 導入する場合: rhdocs は、`/mcp` で `rhdocs` を選び、Authenticate を選んで Red Hat アカウントでログインするよう依頼し、済んだと言われたら確かめ直す。rhkcs は、`/rhkcs-mcp-setup` で導入してから、このスキルを実行し直すよう伝えて終える。
+   - 導入する場合: rhdocs は、`/mcp` で `rhdocs` を選び、無効なら有効（Enable）にし、認証されていなければ Authenticate を選んで Red Hat アカウントでログインするよう依頼し、済んだと言われたら確かめ直す。rhkcs は、`/rhkcs-mcp-setup` で導入してから、このスキルを実行し直すよう伝えて終える。
    - 導入せずに進める場合: 使えないものは使わずに進める。
 2. **公式ドキュメント**: `cluster` が表示したバージョンのドキュメントを読み、該当する章の Procedure と Verification を確かめる。記憶や別バージョンの知識だけで書かない。OpenShift のドキュメントに無いもの（Red Hat 以外の Operator など）は提供元の該当バージョンを読み、どちらも無ければユーザーに伝える。クラスタは読み取りなら調べてよい。
-   - 1 で rhdocs が使えれば、Red Hat のドキュメントは、`redhat_docs_search` で章を探し、`redhat_docs_fetch` で章のページを読む。検索語は英語にし、`OpenShift Container Platform <x.y>` と機能名を入れる（クラスタ固有の値は入れない）。`fetch` の `query` に節の名前を渡すとその節だけが返るが、合う節が無いと先頭の節が返るので、返った見出しを確かめる。検索結果の `abstract` は `<…>` が抜けるので、手順は `fetch` で読んだ本文から書く。
+   - 1 で rhdocs が使えれば、Red Hat のドキュメントは、`redhat_docs_search` で章を探し、`redhat_docs_fetch` で章のページを読む。検索語は英語にし、`OpenShift Container Platform <x.y>` と機能名を入れる（クラスタ固有の値は入れない）。検索結果には別のバージョンも混じるので、URL のバージョンを確かめる。`fetch` の `query` に英語の節の名前を渡すと、章の中の節が 1 つ（`<x.y>` の単位で）返るが、違う節が返ることがあるので、目的の節が含まれるかを確かめる（無ければ `query` なしで章全体を読む）。検索結果の `abstract` は `<…>` が抜けるので、手順は `fetch` で読んだ本文から書く。
    - rhdocs が使えないときと、Red Hat 以外の提供元のドキュメントは、WebFetch で読む（本文が出なければ `offset` で続きを読む）。
 3. **既知の問題**: 1 で rhkcs が使えれば、機能名とバージョンで探して読み、このバージョンの不具合・前提条件・時間がかかる理由があれば、成功条件・待つ時間・注記に反映する（書き方は writing-guide の「コメント」）。手順は公式ドキュメントに従い、記事の手順やコマンドはそのまま使わない（コマンドは空白が抜けている）。rhkcs が使えなければ飛ばす。
 4. **成功条件 (DoD)**: `T new <name>` でひな形を作り（手順名は英小文字・数字・ハイフン。既にある名前は使えない）、spec.md の `## 成功条件 (DoD)` にチェックリストを書いて合意を得る。

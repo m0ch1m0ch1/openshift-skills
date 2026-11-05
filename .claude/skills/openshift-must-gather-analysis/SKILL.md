@@ -18,7 +18,7 @@ argument-hint: "[must-gatherで調べたい事象]"
 1. `mg.sh check` を実行する。`[NG]` なら「omc が無いので入れてほしい」と伝え、`案内:` の GitHub の URL を示して終える。
 2. Red Hat ドキュメントの MCP（rhdocs: `mcp__rhdocs__redhat_docs_search` と `mcp__rhdocs__redhat_docs_fetch`）と、Red Hat ナレッジベースの MCP（rhkcs: `mcp__rhkcs__search_kcs` と `mcp__rhkcs__get_kcs`）が使えるかを確かめる。ツールの一覧に無ければ ToolSearch で `rhdocs`・`rhkcs` を探す（Claude Code が無効・使えないと知らせていれば、探さずに使えないとする。`mcp__rhdocs__authenticate` しか無ければ、rhdocs は認証されていないので使えないとし、自分で認証を始めない）。使えるものは 7 で使う。
 3. 使えないものがあれば、AskUserQuestion で、使えない MCP ごとに導入せずに進めてよいかを聞く（「導入せずに進める」「導入する」から選んでもらう）。使えると何ができるかを添える（rhdocs: 公式ドキュメントを要約されずに読める。rhkcs: ログインが必要なナレッジベースの記事も読める）。
-   - 導入する場合: rhdocs は、`/mcp` で `rhdocs` を選び、Authenticate を選んで Red Hat アカウントでログインするよう依頼し、済んだと言われたら確かめ直す。rhkcs は、`/rhkcs-mcp-setup` で導入してから、このスキルを実行し直すよう伝えて終える。
+   - 導入する場合: rhdocs は、`/mcp` で `rhdocs` を選び、無効なら有効（Enable）にし、認証されていなければ Authenticate を選んで Red Hat アカウントでログインするよう依頼し、済んだと言われたら確かめ直す。rhkcs は、`/rhkcs-mcp-setup` で導入してから、このスキルを実行し直すよう伝えて終える。
    - 導入せずに進める場合: 使えないものは使わずに進める。
 
 ## 2. must-gather の準備
