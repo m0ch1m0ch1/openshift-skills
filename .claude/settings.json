@@ -44,6 +44,8 @@
       "Bash(bash .claude/skills/rhkcs-mcp-setup/scripts/rhkcs.sh update:*)",
       "mcp__rhkcs__search_kcs",
       "mcp__rhkcs__get_kcs",
+      "mcp__rhdocs__redhat_docs_search",
+      "mcp__rhdocs__redhat_docs_fetch",
       "Edit(runbooks/**)",
       "Edit(must-gather-analyses/**)"
     ],

@@ -3,6 +3,10 @@
     "rhkcs": {
       "command": "bash",
       "args": [".claude/skills/rhkcs-mcp-setup/scripts/rhkcs.sh", "run"]
+    },
+    "rhdocs": {
+      "type": "http",
+      "url": "https://docs-mcp.api.redhat.com/mcp"
     }
   }
 }
