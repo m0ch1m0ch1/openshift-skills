@@ -1,7 +1,7 @@
 ---
 name: openshift-must-gather-analysis
 description: OpenShiftのmust-gatherから事象の原因を調べ、対処案とあわせて報告書にまとめる。
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, WebFetch, WebSearch, ToolSearch, mcp__rhkcs__search_kcs, mcp__rhkcs__get_kcs
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, WebFetch, WebSearch, ToolSearch, mcp__rhdocs__redhat_docs_search, mcp__rhdocs__redhat_docs_fetch, mcp__rhkcs__search_kcs, mcp__rhkcs__get_kcs
 argument-hint: "[must-gatherで調べたい事象]"
 ---
 
@@ -16,7 +16,10 @@ argument-hint: "[must-gatherで調べたい事象]"
 ## 1. omc と MCP の確認
 
 1. `mg.sh check` を実行する。`[NG]` なら「omc が無いので入れてほしい」と伝え、`案内:` の GitHub の URL を示して終える。
-2. Red Hat ナレッジベースの MCP（`mcp__rhkcs__search_kcs` と `mcp__rhkcs__get_kcs`）が使えるかを確かめる。ツールの一覧に無ければ ToolSearch で `rhkcs` を探す（Claude Code が、rhkcs は無効・使えないと知らせていれば、探さずに使えないとする）。使えれば 7 で使う。使えなければ「`/rhkcs-mcp-setup` で導入すると、ログインが必要な記事も読める」と 1 行伝え、使わずに進める（聞かない）。
+2. Red Hat ドキュメントの MCP（rhdocs: `mcp__rhdocs__redhat_docs_search` と `mcp__rhdocs__redhat_docs_fetch`）と、Red Hat ナレッジベースの MCP（rhkcs: `mcp__rhkcs__search_kcs` と `mcp__rhkcs__get_kcs`）が使えるかを確かめる。ツールの一覧に無ければ ToolSearch で `rhdocs`・`rhkcs` を探す（Claude Code が無効・使えないと知らせていれば、探さずに使えないとする。`mcp__rhdocs__authenticate` しか無ければ、rhdocs は認証されていないので使えないとし、自分で認証を始めない）。使えるものは 7 で使う。
+3. 使えないものがあれば、AskUserQuestion で、使えない MCP ごとに導入せずに進めてよいかを聞く（「導入せずに進める」「導入する」から選んでもらう）。使えると何ができるかを添える（rhdocs: 公式ドキュメントを要約されずに読める。rhkcs: ログインが必要なナレッジベースの記事も読める）。
+   - 導入する場合: rhdocs は、`/mcp` で `rhdocs` を選び、無効なら有効（Enable）にし、認証されていなければ Authenticate を選んで Red Hat アカウントでログインするよう依頼し、済んだと言われたら確かめ直す。rhkcs は、`/rhkcs-mcp-setup` で導入してから、このスキルを実行し直すよう伝えて終える。
+   - 導入せずに進める場合: 使えないものは使わずに進める。
 
 ## 2. must-gather の準備
 
@@ -55,7 +58,7 @@ argument-hint: "[must-gatherで調べたい事象]"
 
 ## 7. 対処案
 
-ガイドの「対処案と情報元」に従い、WebSearch / WebFetch（1 で MCP が使えれば、ナレッジベースはその MCP）で情報元を調べ、確認事項ごとの回答と対処案を整理する。見つかった情報元は 1 文ずつ伝えながら進める。情報元から、まだ調べていない原因や影響が分かったら、調査項目に足し、5 に戻って must-gather で確かめる。
+ガイドの「対処案と情報元」に従い、WebSearch / WebFetch（1 で MCP が使えれば、公式ドキュメントは rhdocs、ナレッジベースは rhkcs）で情報元を調べ、確認事項ごとの回答と対処案を整理する。見つかった情報元は 1 文ずつ伝えながら進める。情報元から、まだ調べていない原因や影響が分かったら、調査項目に足し、5 に戻って must-gather で確かめる。
 
 ## 8. 報告書
 

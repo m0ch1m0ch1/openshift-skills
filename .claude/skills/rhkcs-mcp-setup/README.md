@@ -55,7 +55,7 @@ Red Hat ナレッジベース（KCS）を検索する MCP サーバーを、こ�
 ```
 
 - Claude Code は起動するときに `rhkcs.sh run` を実行し、stdio で MCP サーバーとやり取りします（ネットワークで待ち受けません）。プロジェクトの MCP サーバーなので、初めて使うときに Claude Code が承認を求めます。
-- `rhkcs.sh run` は、`.rhkcs/token` から token を読み、環境変数 `RH_API_OFFLINE_TOKEN` にしてバイナリを起動します。token は `.mcp.json` にも `~/.claude.json` にも書きません。
+- `rhkcs.sh run` は、`.rhkcs/token` から token を読み、環境変数 `RH_API_OFFLINE_TOKEN` にしてバイナリを起動します。token は `.mcp.json` にも `~/.claude.json` にも書きません。`.claude/settings.json` で、`.rhkcs/token` を Read ツールで読めないようにしています（Bash では防げないため、スキルの決まりでも禁止しています）。
 - rhkcs-mcp が通信するのは、`sso.redhat.com`（token の交換）と `access.redhat.com`（検索）だけです。
 - ビルドに使うリポジトリは `rhkcs.sh` の `REPO_URL` で固定しています。`rhkcs.sh run` は、`PIN` のコミットでビルドしたバイナリだけを起動します（`PIN` を変えたら、`rhkcs.sh build` でビルドし直すまで起動しません）。
 
