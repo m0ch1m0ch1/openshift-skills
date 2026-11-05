@@ -17,7 +17,7 @@ hello-route/
 ├── manifests/       # 適用する YAML
 ├── scripts/         # 各手順の確認スクリプトと、切り戻し（rollback.sh）
 └── run/
-    ├── result.md    # 検証の結果（各手順の OK/NG、成功条件、切り戻しとクリーンアップの結果）
+    ├── result.md    # 検証の結果（各手順の OK/NG、成功条件、切り戻しとクリーンアップの結果。リソースを残した場合は再適用の結果も）
     ├── server       # 検証した接続先
     └── logs/        # 各手順の出力
 ```
