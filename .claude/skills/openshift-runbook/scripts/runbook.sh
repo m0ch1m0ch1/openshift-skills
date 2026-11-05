@@ -197,7 +197,21 @@ cmd_lint() {
   [ -f spec.md ] || ng "spec.md がありません"
   head -1 spec.md 2>/dev/null | has '^# ' || ng "spec.md の 1 行目に '# タイトル' が必要"
   grep -qx '## 前提条件' spec.md 2>/dev/null || echo "[WARN] spec.md に '## 前提条件' がありません"
-  grep '^## ' spec.md 2>/dev/null | grep -vxE '## (成功条件 \(DoD\)|前提条件|パラメータ|関連情報)' | sed "s|^|[WARN] spec.md: 想定外の節です (手順に関わる補足はステップの '# 注記:' に書く): |"
+  grep '^## ' spec.md 2>/dev/null | grep -vxE '## (成功条件 \(DoD\)|前提条件|パラメータ|アクセス情報|関連情報)' | sed "s|^|[WARN] spec.md: 想定外の節です (手順に関わる補足はステップの '# 注記:' に書く): |"
+  # アクセス情報: Route で公開するもの (Web コンソールなど) は、URL・ユーザー名・パスワードの確かめ方を手順書の冒頭に載せる
+  #   (YAML の kind: Route (引用符・行末の説明・List の中の字下げを含む) と、.sh の oc expose service / oc create route)
+  if { grep -qE "^[[:space:]-]*kind:[[:space:]]+[\"']?Route[\"']?[[:space:]]*(#.*)?\$" manifests/*.yaml 2>/dev/null ||
+       grep -qE 'oc[[:space:]]+(expose[[:space:]]+(svc|service)|create[[:space:]]+route)' scripts/*.sh 2>/dev/null; } &&
+     [ -z "$(spec_section アクセス情報 2>/dev/null)" ]; then
+    echo "[WARN] spec.md: Route を作成するので、'## アクセス情報' に URL・ユーザー名・パスワードの確かめ方を書く"
+  fi
+  # パスワードの列には値を書かない (CHANGE_ME と、値を読む Secret やコマンドを書く)
+  spec_section アクセス情報 2>/dev/null | awk -F'|' '
+    /^\|/ && !hdr { hdr = 1; for (i = 2; i < NF; i++) if ($i ~ /パスワード/) c = i; next }
+    /^\|[[:space:]:-]*\|/ && !sep { sep = 1; next }
+    /^\|/ && c { v = $c; gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
+                 if (v != "" && v != "-" && v != "なし" && v !~ /CHANGE_ME|Secret|oc /) print }' |
+    sed "s/^/[WARN] spec.md: アクセス情報のパスワードは、値ではなく CHANGE_ME と、値を読む Secret やコマンドを書く: /"
   # 成功条件 (DoD): チェックリストの各項目に、それを確かめる check.sh のステップを付ける
   if ! grep -qx '## 成功条件 (DoD)' spec.md 2>/dev/null; then ng "spec.md に '## 成功条件 (DoD)' が必要"
   else
@@ -554,8 +568,8 @@ spec_section() {
   awk -v h="## $1" '$0 == h {f = 1; next} /^## / {f = 0} f' spec.md |
     awk 'NF {for (; b > 0; b--) print ""; print; next} {b++}' | sed '/./,$!d'   # 前後の空行を除く
 }
-# spec_other: 前提条件・関連情報 以外の spec.md の節 (パラメータなど) をそのまま出す
-spec_other() { awk '/^## / {f = ($0 != "## 前提条件" && $0 != "## 成功条件 (DoD)" && $0 != "## 関連情報")} f' spec.md; }
+# spec_other: 前提条件・成功条件・アクセス情報・関連情報 以外の spec.md の節 (パラメータなど) をそのまま出す
+spec_other() { awk '/^## / {f = ($0 != "## 前提条件" && $0 != "## 成功条件 (DoD)" && $0 != "## アクセス情報" && $0 != "## 関連情報")} f' spec.md; }
 # script_step <ファイル> <タグ> <インデント> <ログ> <項目 (ブロックが 1 つ)> <項目 (ブロックが複数)> [<注記のファイル>]
 #   ブロックが 1 つなら、項目の下にコマンドと出力例を出す。
 #   複数なら、ブロックごとに「次のコマンドを実行して、<説明>。」のサブステップにして、コマンドと出力例を出す
@@ -612,6 +626,10 @@ cmd_doc() {
       STALE) admonition 警告 "検証後に手順が変更されています。この手順は未検証です。" "";;
       *)     admonition 警告 "この手順は未検証です。" "";;
     esac
+    # アクセス情報: 手順を実行した後にアクセスする URL・ユーザー名・パスワードの確かめ方 (すぐ見つかるように冒頭に置く)
+    if [ -n "$(spec_section アクセス情報)" ]; then
+      echo; echo "## アクセス情報"; echo; spec_section アクセス情報
+    fi
     echo
     echo "## 前提条件"
     echo
