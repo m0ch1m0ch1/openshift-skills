@@ -19,6 +19,12 @@ nginx を 1 つの Pod で実行し、Service と Route（edge TLS 終端）を�
 | Namespace | hello-route | 全ファイル |
 | イメージ | quay.io/nginx/nginx-unprivileged:1.27 | manifests/02-deployment.yaml |
 
+## アクセス情報
+
+| 対象 | URL | ユーザー名 | パスワード |
+| --- | --- | --- | --- |
+| nginx | https://hello-hello-route.apps.<クラスタのドメイン> | なし | なし |
+
 ## 関連情報
 
 - [ルート（OpenShift Container Platform 4.22「Ingress およびロードバランシング」）](https://docs.redhat.com/ja/documentation/openshift_container_platform/4.22/html/ingress_and_load_balancing/routes)

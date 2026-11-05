@@ -11,9 +11,11 @@
 #   runbook.sh plan    <name>           成功条件、パラメータ、適用するリソース、既に存在するもの、前回から残っているものを表示する (読み取りのみ)
 #   runbook.sh run     <name> --cleanup|--keep
 #                                       実クラスタで手順を実行して検証し、検証結果と runbook.md を書く。どちらかの指定が必須
-#                                       終了コード: 0=PASS 1=手順が失敗 2=切り戻し/クリーンアップに問題 3=開始できない (何も変更していない) 130=中断
+#                                       終了コード: 0=PASS 1=手順 (再適用を含む) が失敗 2=切り戻し/クリーンアップに問題 3=開始できない (何も変更していない) 130=中断
 #                                       --cleanup: rollback.sh と cleanup で元に戻す
-#                                       --keep:    作成したリソースを残す (rollback.sh は検証されない)
+#                                       --keep:    --cleanup と同じく元に戻すまで検証してから、もう一度適用してリソースを残す
+#                                                  (時間は約 2 倍。ステップ・切り戻し・クリーンアップがすべて OK で、
+#                                                  実行中にファイルが変わっていないときだけ再適用する)
 #   runbook.sh cleanup <name>           検証で残ったリソースを元に戻す (rollback.sh を実行し、適用した YAML を削除する)
 #                                       終了コード: 0=完了 1=削除できない/確認できない 3=開始できない (接続先が検証したときと違うなど)
 #   runbook.sh doc     <name>           runbook.md を作り直す (run の最後にも実行される。クラスタに接続しない)
@@ -25,12 +27,13 @@
 #   OCP_VERSION      lint で確認するドキュメントのバージョン (既定: 接続中のクラスタのバージョン)
 #
 # 検証の記録 (<RUNBOOK_DIR>/<name>/run/):
-#   result.md    検証結果。1 行目のコメントに result / date / version / fp / keep を持つ
+#   result.md    検証結果。1 行目のコメントに result / date / version / fp / keep / rb (切り戻し) / ra (再適用) を持つ
+#                (中断したときは result=INTERRUPTED と、中断した段階 phase=step|rollback|reapply)
 #   applied.txt  適用した YAML (run/applied/ に保存した、適用したときの内容)。cleanup で逆順に削除する
 #   server       検証した API サーバーとプロジェクト。cleanup は同じクラスタ・プロジェクトでしか実行しない
 #   touched      .sh ステップを実行した (rollback.sh で戻すものがある)
 #   pending      クラスタにリソースが残っている可能性がある。ステップの実行前に作り、元に戻せたら消す
-#   logs/        ステップ・rollback・cleanup のログ
+#   logs/        ステップ・rollback・cleanup のログ (--keep の再適用は logs/reapply/)
 set -uo pipefail
 TIMEOUT="${RUNBOOK_TIMEOUT:-300s}"
 # 手順の置き場所: 既定は Git リポジトリのルート (Git の外ならカレントディレクトリ) の runbooks/。作業中にカレントディレクトリが変わっても同じ場所を使う
@@ -91,7 +94,7 @@ block_part() {
     { coded = 1 }
     part == "code"' "$1"
 }
-meta()    { sed -n "1s/.* $1=\([^ ]*\).*/\1/p" run/result.md 2>/dev/null; }   # result.md の 1 行目の値
+meta()    { sed -n "1{s/.* $1=\([^ ]*\).*/\1/p;q;}" run/result.md 2>/dev/null; }   # result.md の 1 行目の値
 # spec.md の "## 成功条件 (DoD)" の項目の書式: "- [ ] 状態（確認: NN-name）"。NN-name は、その状態を確かめる check.sh のステップ
 DOD_ITEM='^- \[ \] .+（確認: [0-9]{2}-[a-z0-9-]+）$'
 # criteria: 成功条件を "<ステップ名>|<状態>" で出す
@@ -197,7 +200,21 @@ cmd_lint() {
   [ -f spec.md ] || ng "spec.md がありません"
   head -1 spec.md 2>/dev/null | has '^# ' || ng "spec.md の 1 行目に '# タイトル' が必要"
   grep -qx '## 前提条件' spec.md 2>/dev/null || echo "[WARN] spec.md に '## 前提条件' がありません"
-  grep '^## ' spec.md 2>/dev/null | grep -vxE '## (成功条件 \(DoD\)|前提条件|パラメータ|関連情報)' | sed "s|^|[WARN] spec.md: 想定外の節です (手順に関わる補足はステップの '# 注記:' に書く): |"
+  grep '^## ' spec.md 2>/dev/null | grep -vxE '## (成功条件 \(DoD\)|前提条件|パラメータ|アクセス情報|関連情報)' | sed "s|^|[WARN] spec.md: 想定外の節です (手順に関わる補足はステップの '# 注記:' に書く): |"
+  # アクセス情報: Route で公開するもの (Web コンソールなど) は、URL・ユーザー名・パスワードの確かめ方を手順書の冒頭に載せる
+  #   (YAML の kind: Route (引用符・行末の説明・List の中の字下げを含む) と、.sh の oc expose service / oc create route)
+  if { grep -qE "^[[:space:]-]*kind:[[:space:]]+[\"']?Route[\"']?[[:space:]]*(#.*)?\$" manifests/*.yaml 2>/dev/null ||
+       grep -qE 'oc[[:space:]]+(expose[[:space:]]+(svc|service)|create[[:space:]]+route)' scripts/*.sh 2>/dev/null; } &&
+     [ -z "$(spec_section アクセス情報 2>/dev/null)" ]; then
+    echo "[WARN] spec.md: Route を作成するので、'## アクセス情報' に URL・ユーザー名・パスワードの確かめ方を書く"
+  fi
+  # パスワードの列には値を書かない (CHANGE_ME と、値を読む Secret やコマンドを書く)
+  spec_section アクセス情報 2>/dev/null | awk -F'|' '
+    /^\|/ && !hdr { hdr = 1; for (i = 2; i < NF; i++) if ($i ~ /パスワード/) c = i; next }
+    /^\|[[:space:]:-]*\|/ && !sep { sep = 1; next }
+    /^\|/ && c { v = $c; gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
+                 if (v != "" && v != "-" && v != "なし" && v !~ /CHANGE_ME|Secret|oc /) print }' |
+    sed "s/^/[WARN] spec.md: アクセス情報のパスワードは、値ではなく CHANGE_ME と、値を読む Secret やコマンドを書く: /"
   # 成功条件 (DoD): チェックリストの各項目に、それを確かめる check.sh のステップを付ける
   if ! grep -qx '## 成功条件 (DoD)' spec.md 2>/dev/null; then ng "spec.md に '## 成功条件 (DoD)' が必要"
   else
@@ -340,7 +357,7 @@ cmd_plan() {
     [ -n "$exist" ] || [ $unknown = 1 ] || [ ! -s run/applied.txt ] || echo "  - (適用した YAML のリソースは、クラスタに見つかりません)"
     echo "次: runbook.sh cleanup $SLUG"
   fi
-  [ $ng = 0 ] && { echo; echo "次: runbook.sh run $SLUG --cleanup (作成したリソースを残すときは --keep)"; }
+  [ $ng = 0 ] && { echo; echo "次: 検証後にクリーンアップするかリソースを残すかをユーザーに聞き、runbook.sh run $SLUG --cleanup か --keep (切り戻しまで検証してから再適用して残す。時間は約 2 倍)"; }
   return $ng
 }
 
@@ -406,9 +423,11 @@ cmd_run() {
   cmd_doc >/dev/null   # 実行中・中断時に、前回の「検証済み」の手順書が残らないようにする
   # 中断されたとき (Bash の timeout など) は、その旨を記録して終える。pending が残るので cleanup で元に戻せる
   #   (ステップの出力はログに向けているので、画面への出力は fd 3 に書く)
+  #   どの段階で中断したか (step / rollback / reapply) も記録する
   exec 3>&1
-  trap 'echo "<!-- result=INTERRUPTED date=$(date "+%Y-%m-%dT%H:%M") -->" > run/result.md; echo "[NG] 中断されました" >&3; echo "次: runbook.sh plan $SLUG で確認し、runbook.sh cleanup $SLUG" >&3; exit 130' INT TERM
-  local b t st rows="" failed="" rb=OK cl=OK result=PASS n
+  local phase=step
+  trap 'echo "<!-- result=INTERRUPTED date=$(date "+%Y-%m-%dT%H:%M") phase=$phase -->" > run/result.md; echo "[NG] 中断されました" >&3; echo "次: runbook.sh plan $SLUG で確認し、runbook.sh cleanup $SLUG" >&3; exit 130' INT TERM
+  local b t st rows="" failed="" rb=OK cl=OK ra=- reapplied="" result=PASS n
   for s in $(steps); do
     b="$(sid "$s")"
     if [ -n "$failed" ]; then rows+="| $b | $(title "$s") | SKIP | - |"$'\n'; continue; fi
@@ -417,10 +436,9 @@ cmd_run() {
     rows+="| $b | $(title "$s") | $st | $(( $(date +%s) - t )) |"$'\n'
     echo "[$st] $b  $(title "$s")"
   done
-  if [ $keep = 1 ]; then
-    # 作成したリソースを残す (pending も残る)。後で cleanup を実行すると元に戻す
-    rb=未実施; cl=未実施; echo "[SKIP] rollback / cleanup (--keep。rollback.sh は検証していません)"
-  elif ! rollback_needed; then
+  # --keep でも、まず切り戻しとクリーンアップまで検証する (切り戻しを検証しないまま手順書を確定させない)
+  phase=rollback
+  if ! rollback_needed; then
     # 何も変更していない (最初のステップの適用前に止まった) ので、切り戻さない
     rb=不要; cl=不要; echo "[SKIP] rollback / cleanup (何も変更していません)"; rm -f run/pending
   else
@@ -429,13 +447,28 @@ cmd_run() {
     if [ $rb = OK ]; then delete_applied > run/logs/cleanup.log 2>&1 || cl=NG; else cl=未実施; fi; echo "[$cl] cleanup"
     [ $rb = OK ] && [ $cl = OK ] && rm -f run/pending run/touched
   fi
+  # --keep: 元に戻せたら、もう一度適用してリソースを残す (pending も残る)。後で cleanup を実行すると元に戻す
+  #   再適用の失敗は、切り戻しで元の状態に戻っていない (finalizer・CRD が残るなど) 可能性があるので FAIL にする
+  #   実行中にファイルが直されたときは、検証していない内容を残さないように再適用しない
+  if [ "$keep" = 1 ] && [ -z "$failed" ] && [ "$rb" = OK ] && [ "$cl" = OK ] && [ "$(fingerprint)" != "$fp" ]; then
+    ra=未実施; echo "[SKIP] 再適用 (検証中にファイルが変更されたため。リソースは残していません。変更した内容で run をやり直す)"
+  elif [ "$keep" = 1 ] && [ -z "$failed" ] && [ "$rb" = OK ] && [ "$cl" = OK ]; then
+    phase=reapply; ra=OK; mkdir -p run/logs/reapply; touch run/pending
+    for s in $(steps); do
+      b="$(sid "$s")"
+      if run_step "$s" > "run/logs/reapply/$b.log" 2>&1; then echo "[OK] 再適用 $b"
+      else ra=NG; reapplied=$b; diagnose >> "run/logs/reapply/$b.log" 2>&1; echo "[NG] 再適用 $b"; break; fi
+    done
+  elif [ "$keep" = 1 ]; then
+    ra=未実施; echo "[SKIP] 再適用 (ステップ・切り戻し・クリーンアップのどれかが OK ではないため)"
+  fi
   trap - INT TERM
-  [ -z "$failed" ] && [ $rb != NG ] && [ $cl != NG ] || result=FAIL
+  [ -z "$failed" ] && [ "$rb" != NG ] && [ "$cl" != NG ] && [ "$ra" != NG ] || result=FAIL
   {
-    echo "<!-- result=$result date=$(date '+%Y-%m-%dT%H:%M') version=$(version) fp=$fp keep=$keep -->"
+    echo "<!-- result=$result date=$(date '+%Y-%m-%dT%H:%M') version=$(version) fp=$fp keep=$keep rb=$rb ra=$ra -->"
     echo "# 検証結果: $(title spec.md)"
     echo
-    echo "- 結果: **${result}**（切り戻し ${rb} / クリーンアップ ${cl}）"
+    echo "- 結果: **${result}**（切り戻し ${rb} / クリーンアップ ${cl}$([ $keep = 1 ] && echo " / 再適用 ${ra}")）"
     echo "- 日時: $(date '+%Y-%m-%d %H:%M')"
     echo "- 接続先: \`$(cut -d' ' -f1 run/server)\`（プロジェクト $(cut -d' ' -f2 run/server)、OpenShift $(version)、$(oc whoami)）"
     echo
@@ -448,7 +481,8 @@ cmd_run() {
     criteria | while IFS='|' read -r b d; do
       echo "$b|$d|$(printf '%s' "$rows" | awk -F' *[|] *' -v b="$b" '$2 == b {print $4}')"
     done | checklist step
-    for n in $failed $([ $rb = NG ] && echo rollback) $([ $cl = NG ] && echo cleanup); do
+    [ "$ra" != NG ] || { echo; echo "これは 1 回目の適用の結果です。切り戻した後の再適用では失敗しています。"; }
+    for n in $failed $([ $rb = NG ] && echo rollback) $([ $cl = NG ] && echo cleanup) ${reapplied:+reapply/$reapplied}; do
       printf '\n## NG: %s（末尾 60 行）\n\n```text\n' "$n"; tail -60 "run/logs/$n.log"; echo '```'
     done
     echo; echo "全ログ: run/logs/"
@@ -458,12 +492,13 @@ cmd_run() {
   if [ $result = FAIL ]; then
     if [ -n "$failed" ]; then echo "次: $DIR/$SLUG/run/logs/$failed.log で原因を調べる"
     elif [ $rb = NG ]; then echo "次: $DIR/$SLUG/run/logs/rollback.log で原因を調べる"
-    else echo "次: $DIR/$SLUG/run/logs/cleanup.log で原因を調べる"; fi
-    if leftover && [ $keep = 0 ]; then echo "次: リソースが残っている。ファイルを直す前に runbook.sh plan $SLUG で確認し、runbook.sh cleanup $SLUG (rollback.sh の不具合なら、rollback.sh だけを先に直す)"
+    elif [ $cl = NG ]; then echo "次: $DIR/$SLUG/run/logs/cleanup.log で原因を調べる"
+    else echo "次: $DIR/$SLUG/run/logs/reapply/$reapplied.log で原因を調べる (切り戻しで元の状態に戻っていない可能性がある)"; fi
+    if leftover; then echo "次: リソースが残っている。ファイルを直す前に runbook.sh plan $SLUG で確認し、runbook.sh cleanup $SLUG (rollback.sh の不具合なら、rollback.sh だけを先に直す)"
     elif [ -n "$failed" ]; then echo "次: ファイルを直して run をやり直す"; fi
   fi
-  [ $keep = 1 ] && leftover && echo "案内: リソースは残っています。元に戻すときは、runbook.md の「切り戻し」の手順を実行する"
-  [ -n "$failed" ] && return 1
+  [ "$ra" = OK ] && echo "案内: 切り戻しまで検証してから再適用し、リソースを残しています。元に戻すときは runbook.sh cleanup $SLUG を実行する (runbook.md の「切り戻し」の手順で手で戻した場合も、次の検証の前に cleanup で記録を消す)"
+  { [ -n "$failed" ] || [ -n "$reapplied" ]; } && return 1
   [ $result = PASS ] || return 2
   return 0
 }
@@ -554,8 +589,8 @@ spec_section() {
   awk -v h="## $1" '$0 == h {f = 1; next} /^## / {f = 0} f' spec.md |
     awk 'NF {for (; b > 0; b--) print ""; print; next} {b++}' | sed '/./,$!d'   # 前後の空行を除く
 }
-# spec_other: 前提条件・関連情報 以外の spec.md の節 (パラメータなど) をそのまま出す
-spec_other() { awk '/^## / {f = ($0 != "## 前提条件" && $0 != "## 成功条件 (DoD)" && $0 != "## 関連情報")} f' spec.md; }
+# spec_other: 前提条件・成功条件・アクセス情報・関連情報 以外の spec.md の節 (パラメータなど) をそのまま出す
+spec_other() { awk '/^## / {f = ($0 != "## 前提条件" && $0 != "## 成功条件 (DoD)" && $0 != "## アクセス情報" && $0 != "## 関連情報")} f' spec.md; }
 # script_step <ファイル> <タグ> <インデント> <ログ> <項目 (ブロックが 1 つ)> <項目 (ブロックが複数)> [<注記のファイル>]
 #   ブロックが 1 つなら、項目の下にコマンドと出力例を出す。
 #   複数なら、ブロックごとに「次のコマンドを実行して、<説明>。」のサブステップにして、コマンドと出力例を出す
@@ -595,6 +630,13 @@ cmd_doc() {
   result="$(meta result)"
   [ -n "$(meta fp)" ] && [ "$(meta fp)" != "$(fingerprint)" ] && result=STALE
   for s in $(steps); do last="$(sid "$s")"; done
+  # 切り戻しを実行していない検証か (rb=不要: 何も変更する前に止まった)。
+  #   rb を記録していない以前の形式では、--keep は rollback.sh を実行せずにリソースを残していた
+  local norb=0
+  case "$(meta rb)" in
+    不要) norb=1;;
+    "") [ "$(meta keep)" = 1 ] && norb=1;;
+  esac
   # ステップ <b> の検証ログ (成功したステップの出力だけを出力例にする)
   steplog() {
     st="$(awk -F' *[|] *' -v b="$1" '$2==b {print $4}' run/result.md 2>/dev/null)"
@@ -606,12 +648,16 @@ cmd_doc() {
     # 概要 (タイトルの次から最初の ## まで)
     sed -n '2,/^## /p' spec.md | sed '/^## /d' | sed '/./,$!d'
     case "$result" in
-      PASS)  admonition 注記 "この手順は $(meta date | tr T ' ')、OpenShift $(meta version) で検証済みです$([ "$(meta keep)" = 1 ] && echo "。切り戻しは検証していません")（詳細: run/result.md）。" "";;
-      FAIL)  admonition 警告 "この手順は検証で失敗しています。使用しないでください（詳細: run/result.md）。" "";;
-      INTERRUPTED) admonition 警告 "この手順の検証は中断されました。この手順は未検証です（詳細: run/result.md）。" "";;
+      PASS)  admonition 注記 "この手順は $(meta date | tr T ' ')、OpenShift $(meta version) で検証済みです$([ $norb = 1 ] && echo "。切り戻しは検証していません")（詳細: run/result.md）。" "";;
+      FAIL)  admonition 警告 "この手順は検証で失敗しています$([ "$(meta ra)" = NG ] && echo "（手順と切り戻しは成功しましたが、切り戻した後にもう一度適用すると失敗しました。切り戻しで元の状態に戻らないものがある可能性があります）")。使用しないでください（詳細: run/result.md）。" "";;
+      INTERRUPTED) admonition 警告 "この手順の検証は$([ "$(meta phase)" = reapply ] && echo "、切り戻した後の再適用の途中で")中断されました。この手順は未検証です（詳細: run/result.md）。" "";;
       STALE) admonition 警告 "検証後に手順が変更されています。この手順は未検証です。" "";;
       *)     admonition 警告 "この手順は未検証です。" "";;
     esac
+    # アクセス情報: 手順を実行した後にアクセスする URL・ユーザー名・パスワードの確かめ方 (すぐ見つかるように冒頭に置く)
+    if [ -n "$(spec_section アクセス情報)" ]; then
+      echo; echo "## アクセス情報"; echo; spec_section アクセス情報
+    fi
     echo
     echo "## 前提条件"
     echo
@@ -651,7 +697,7 @@ cmd_doc() {
       echo "## 成功条件 (DoD)"
       echo
       if [ "$result" = PASS ] || [ "$result" = FAIL ]; then
-        echo "$(meta date | tr T ' ') の検証で確認できた成功条件に [x] を付けています。"
+        echo "$(meta date | tr T ' ') の検証で確認できた成功条件に [x] を付けています$([ "$(meta ra)" = NG ] && echo "（1 回目の適用の結果です。切り戻した後の再適用では失敗しています）")。"
       elif [ "$result" = STALE ]; then
         echo "検証後に手順が変更されているため、成功条件は未確認です。"
       else
@@ -663,13 +709,12 @@ cmd_doc() {
         echo "$b|$d|$st"
       done | checklist index
     fi
-    # 切り戻し: run (--cleanup) と cleanup と同じ順序 (rollback.sh → 適用した YAML を逆順に削除) で載せる
+    # 切り戻し: run と cleanup と同じ順序 (rollback.sh → 適用した YAML を逆順に削除) で載せる
     echo
     echo "## 切り戻し"
     echo
     echo "この手順で作成・変更したものを削除し、手順を実行する前の状態に戻します。"
-    # リソースを残して検証した (--keep) ときは、切り戻しの手順を実行していない
-    if { [ "$result" = PASS ] || [ "$result" = FAIL ]; } && [ "$(meta keep)" = 1 ]; then
+    if { [ "$result" = PASS ] || [ "$result" = FAIL ]; } && [ $norb = 1 ]; then
       admonition 重要 "この切り戻しの手順は、検証では実行していません。実行する前に、内容を確認してください。" ""
     fi
     notes scripts/rollback.sh ""

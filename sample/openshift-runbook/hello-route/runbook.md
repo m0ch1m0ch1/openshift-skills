@@ -6,6 +6,12 @@ nginx を 1 つの Pod で実行し、Service と Route（edge TLS 終端）を�
 >
 > この手順は 2026-11-04 17:42、OpenShift 4.22.20 で検証済みです（詳細: run/result.md）。
 
+## アクセス情報
+
+| 対象 | URL | ユーザー名 | パスワード |
+| --- | --- | --- | --- |
+| nginx | https://hello-hello-route.apps.<クラスタのドメイン> | なし | なし |
+
 ## 前提条件
 
 - Namespace を作成する権限を持つユーザーとしてクラスタにアクセスできる。
