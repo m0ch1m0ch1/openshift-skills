@@ -3,10 +3,10 @@ operatorgroup.operators.coreos.com/metallb-operator created
 subscription.operators.coreos.com/metallb-operator-sub created
 --- check:1
 subscription.operators.coreos.com/metallb-operator-sub condition met
-clusterserviceversion.operators.coreos.com/metallb-operator.v4.22.0-202610271454 condition met
+clusterserviceversion.operators.coreos.com/metallb-operator.v4.22.0-202611031655 condition met
 --- check:2
 Name                                    Phase
-metallb-operator.v4.22.0-202610271454   Succeeded
+metallb-operator.v4.22.0-202611031655   Succeeded
 --- check:3
 NAME            CSV                                     APPROVAL    APPROVED
-install-c5chw   metallb-operator.v4.22.0-202610271454   Automatic   true
+install-slg84   metallb-operator.v4.22.0-202611031655   Automatic   true

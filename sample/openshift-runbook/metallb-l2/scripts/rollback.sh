@@ -24,7 +24,7 @@ if oc get crd metallbs.metallb.io >/dev/null 2>&1; then
 fi
 
 # MetalLB Operator の Subscription と CSV を削除する
-oc delete subscription metallb-operator-sub -n metallb-system --ignore-not-found
+oc delete subscriptions.operators.coreos.com metallb-operator-sub -n metallb-system --ignore-not-found
 oc delete csv -n metallb-system -l operators.coreos.com/metallb-operator.metallb-system --ignore-not-found
 
 # MetalLB Operator の CRD を削除する

@@ -16,7 +16,8 @@ nginx を 1 つの Pod で実行し、Service と Route（edge TLS 終端）を�
 
 - Namespace を作成する権限を持つユーザーとしてクラスタにアクセスできる。
 - クラスタから quay.io のイメージを取得できる。
-- コマンドは、この手順書があるディレクトリ (manifests/ と scripts/ がある場所) で実行する。
+- この手順で作成するリソースが、まだ存在しない。存在する場合は実行しない（切り戻しで消えるため）。
+- manifests/ と scripts/ (rollback.sh を含む) をこの手順書と同じディレクトリにあらかじめ配置し、コマンドはそのディレクトリで実行する。
 
 ## パラメータ
 
@@ -27,9 +28,22 @@ nginx を 1 つの Pod で実行し、Service と Route（edge TLS 終端）を�
 
 ## 手順
 
+### 事前確認
+
+次のコマンドを実行して、manifests/ のすべての YAML の対象リソースについて、何も表示されないことを確認します。リソース名が表示された場合は、既存リソースがあるため中止します。no matches for kind / resource mapping not found（CRD がまだ登録されていない）は、そのリソースがまだ存在しないものとして続行します。それ以外のエラー（権限・通信など）で確認できない場合は中止し、以降の手順へ進まないでください。
+
+```terminal
+$ oc get -f manifests/01-namespace.yaml --ignore-not-found -o name
+$ oc get -f manifests/02-deployment.yaml --ignore-not-found -o name
+$ oc get -f manifests/03-service.yaml --ignore-not-found -o name
+$ oc get -f manifests/04-route.yaml --ignore-not-found -o name
+```
+
+### 作業
+
 1. Namespace を作成します。
 
-   1. 次の YAML を使用して `manifests/01-namespace.yaml` ファイルを作成します。
+   1. あらかじめ配置した `manifests/01-namespace.yaml` ファイルの内容が、次の YAML と一致することを確認します。
 
       ```yaml
       apiVersion: v1
@@ -64,7 +78,7 @@ nginx を 1 つの Pod で実行し、Service と Route（edge TLS 終端）を�
 
 2. nginx の Deployment を作成します。
 
-   1. 次の YAML を使用して `manifests/02-deployment.yaml` ファイルを作成します。
+   1. あらかじめ配置した `manifests/02-deployment.yaml` ファイルの内容が、次の YAML と一致することを確認します。
 
       ```yaml
       apiVersion: apps/v1
@@ -146,7 +160,7 @@ nginx を 1 つの Pod で実行し、Service と Route（edge TLS 終端）を�
 
 3. Service を作成します。
 
-   1. 次の YAML を使用して `manifests/03-service.yaml` ファイルを作成します。
+   1. あらかじめ配置した `manifests/03-service.yaml` ファイルの内容が、次の YAML と一致することを確認します。
 
       ```yaml
       apiVersion: v1
@@ -194,7 +208,7 @@ nginx を 1 つの Pod で実行し、Service と Route（edge TLS 終端）を�
    >
    > Route のホスト名は、クラスタの Ingress ドメインから自動で設定されます。証明書を指定しないため、Ingress Controller の既定の証明書が使われます。
 
-   1. 次の YAML を使用して `manifests/04-route.yaml` ファイルを作成します。
+   1. あらかじめ配置した `manifests/04-route.yaml` ファイルの内容が、次の YAML と一致することを確認します。
 
       ```yaml
       apiVersion: route.openshift.io/v1
@@ -270,7 +284,23 @@ nginx を 1 つの Pod で実行し、Service と Route（edge TLS 終端）を�
 
 ### 手順
 
-1. 次のコマンドを実行して、作成したリソースを、適用したときと逆の順序で削除します。
+1. 次のコマンドを実行して、切り戻しスクリプトを実行します。
+
+   ```terminal
+   $ bash scripts/rollback.sh
+   ```
+
+   「止めます」と表示された場合や、コマンドが失敗した場合は、次の YAML の削除に進まないでください。
+
+   **参考: scripts/rollback.sh の内容**
+
+   ```bash
+   #!/usr/bin/env bash
+   # 切り戻し。この手順で作成するものはすべて YAML のため、rollback.sh で戻すものはありません (YAML のリソースは cleanup が逆順に削除します)
+   set -euo pipefail
+   ```
+
+2. 次のコマンドを実行して、作成したリソースを、適用したときと逆の順序で削除します。
 
    ```terminal
    $ oc delete -f manifests/04-route.yaml --ignore-not-found

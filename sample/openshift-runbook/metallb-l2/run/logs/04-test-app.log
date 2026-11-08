@@ -2,20 +2,20 @@ namespace/metallb-test created
 deployment.apps/hello created
 service/hello created
 --- check:1
-pod/hello-656fb99587-v52ks condition met
-pod/hello-656fb99587-v52ks condition met
+pod/hello-656fb99587-l5vxp condition met
+pod/hello-656fb99587-l5vxp condition met
 --- check:2
-NAME                     READY   STATUS    RESTARTS   AGE   IP             NODE                          NOMINATED NODE   READINESS GATES
-hello-656fb99587-v52ks   1/1     Running   0          1s    10.128.0.207   <ノード名>                    <none>           <none>
+NAME                     READY   STATUS    RESTARTS   AGE   IP            NODE                          NOMINATED NODE   READINESS GATES
+hello-656fb99587-l5vxp   1/1     Running   0          20s   10.128.0.14   <ノード名>                    <none>           <none>
 --- check:3
-2026/11/04 08:49:00 [notice] 1#1: start worker process 36
-2026/11/04 08:49:00 [notice] 1#1: start worker process 37
-2026/11/04 08:49:00 [notice] 1#1: start worker process 38
+2026/11/08 11:15:48 [notice] 1#1: start worker process 34
+2026/11/08 11:15:48 [notice] 1#1: start worker process 35
+2026/11/08 11:15:48 [notice] 1#1: start worker process 36
 --- check:4
 service/hello condition met
 --- check:5
-NAME    TYPE           CLUSTER-IP       EXTERNAL-IP      PORT(S)          AGE
-hello   LoadBalancer   172.30.155.148   192.0.2.150      8080:32584/TCP   3s
+NAME    TYPE           CLUSTER-IP      EXTERNAL-IP      PORT(S)          AGE
+hello   LoadBalancer   172.30.96.181   192.0.2.150      8080:31356/TCP   21s
 --- check:6
 http://192.0.2.150:8080/ -> 200
 --- check:7
