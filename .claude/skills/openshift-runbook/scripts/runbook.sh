@@ -30,7 +30,7 @@
 #   RUNBOOK_DIR      手順を置くディレクトリ (既定: Git リポジトリのルートの output/openshift-runbook/。指定先はリポジトリ内に限る)
 #                    相対パスは実行時のカレントディレクトリを基準にする。
 #   RUNBOOK_TIMEOUT  削除を待つ時間の上限 (既定: 300s)
-#   一時ファイルと kubeconfig は output/openshift-runbook/.runtime/ に作り、終了時に削除する (適用一覧の更新用は run/ に作る)。
+#   一時ファイルと kubeconfig は .tmp/openshift-runbook/ に作り、終了時に削除する (適用一覧の更新用は run/ に作る)。
 #   OCP_VERSION      lint で確認するドキュメントのバージョン (既定: 接続中のクラスタのバージョン)
 #
 # 検証の記録 (<RUNBOOK_DIR>/<name>/run/):
@@ -108,9 +108,9 @@ remove_tree() {
 WORK=""
 init_work() {
   [ -z "$WORK" ] || return 0
-  safe_path "$ROOT/output/openshift-runbook/.runtime" || return 1
-  mkdir -p "$ROOT/output/openshift-runbook/.runtime" || return 1
-  WORK="$(mktemp -d "$ROOT/output/openshift-runbook/.runtime/session.XXXXXX")" || return 1
+  safe_path "$ROOT/.tmp/openshift-runbook" || return 1
+  mkdir -p "$ROOT/.tmp/openshift-runbook" || return 1
+  WORK="$(mktemp -d "$ROOT/.tmp/openshift-runbook/session.XXXXXX")" || return 1
   chmod 700 "$WORK" || return 1
   export TMPDIR="$WORK" WORK
 }

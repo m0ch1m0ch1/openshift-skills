@@ -2,11 +2,11 @@
 # Google ドキュメント・スライドを gws で読み取る
 #
 # 使い方:
-#   review.sh fetch <URL>  資料を input/openshift-gws-doc-review/ に読み取り (前に読み取ったものは消す)、資料の名前・最終更新と、
+#   review.sh fetch <URL>  資料を .tmp/openshift-gws-doc-review/ に読み取り (前に読み取ったものは消す)、資料の名前・最終更新と、
 #                          レビュー結果の保存先 (output/openshift-gws-doc-review/<レビューした日>_<資料名>.md) を表示する
 #                          ドキュメント: document.md と、埋め込まれた画像 (image<N>.<拡張子>)
 #                          スライド:     slides.md (スライドごとの文字とスピーカーノート) と、画像・線・表・グラフ・動画のあるスライドの画像 (slide-<N>.png)
-#   review.sh clean        input/openshift-gws-doc-review/ の中身を消す
+#   review.sh clean        .tmp/openshift-gws-doc-review/ を消す
 set -uo pipefail
 umask 077
 GWS_TESTED="0.22.5"
@@ -14,7 +14,7 @@ GWS_TESTED="0.22.5"
 TOP="$(cd "$(dirname "$0")/../../../.." && pwd -P)" || exit 1
 cd "$TOP" || exit 1   # gws は --output にカレントディレクトリの下しか受け付けない
 OUT=output/openshift-gws-doc-review
-WORK=input/openshift-gws-doc-review
+WORK=.tmp/openshift-gws-doc-review
 # 文字だけでは分からない要素があるスライドか
 VISUAL='def visual: [.pageElements[]? | .. | objects | select(has("image") or has("line") or has("table") or has("sheetsChart") or has("video"))] | length > 0;'
 
@@ -31,13 +31,12 @@ export_to() {
   api drive files export --params "$(jq -cn --arg id "$ID" --arg m "$1" '{fileId: $id, mimeType: $m}')" --output "$2" >/dev/null 2>&1 && [ -s "$2" ] && return 0
   rm -f "$2"; return 1
 }
-# clean: 読み取った資料を消す (フォルダと .gitkeep は残す)
 clean() {
   [ -d "$WORK" ] || return 0
-  rm -f "$WORK"/*
+  rm -f "$WORK"/* && rmdir "$WORK"
 }
 
-for d in input output "$WORK" "$OUT"; do
+for d in .tmp output "$WORK" "$OUT"; do
   [ ! -L "$d" ] || ng "$d がシンボリックリンクです"
 done
 case "${1:-} $#" in
