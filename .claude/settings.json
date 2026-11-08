@@ -76,10 +76,15 @@
       "Bash(bash .claude/skills/openshift-must-gather-analysis/scripts/mg.sh report:*)",
       "Bash(bash .claude/skills/openshift-must-gather-analysis/scripts/mg.sh lint:*)",
       "Bash(bash .claude/skills/rhkcs-mcp-setup/scripts/rhkcs.sh build)",
-      "Bash(bash .claude/skills/rhkcs-mcp-setup/scripts/rhkcs.sh permissions)"
+      "Bash(bash .claude/skills/rhkcs-mcp-setup/scripts/rhkcs.sh permissions)",
+      "Bash(bash .claude/skills/openshift-gws-doc-review/scripts/review.sh fetch:*)",
+      "Bash(bash .claude/skills/openshift-gws-doc-review/scripts/review.sh clean)",
+      "Edit(gws-doc-reviews/**)"
     ],
     "deny": [
-      "Read(./.rhkcs/token)"
+      "Read(./.rhkcs/token)",
+      "Read(~/.config/gws/**)",
+      "Bash(gws:*)"
     ],
     "ask": [
       "Bash(gh:*)"

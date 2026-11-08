@@ -18,11 +18,15 @@ OpenShift の must-gather を omc で調べ、指定した事象の原因と対�
 
 ## 使い方
 
-調べたい事象を引数に書いて実行します（省略した場合は、スキルが聞きます）。
-
 ```text
-/openshift-must-gather-analysis 昨日の 17 時ごろから、openshift-monitoring の Pod が CrashLoopBackOff になっている
+# 調べたい事象を聞いてから始める
+/openshift-must-gather-analysis
+
+# 調べたい事象を指定して始める
+/openshift-must-gather-analysis <調べたい事象>
 ```
+
+例: `/openshift-must-gather-analysis 昨日の 17 時ごろから、openshift-monitoring の Pod が CrashLoopBackOff になっている`
 
 次の順に進みます。
 
