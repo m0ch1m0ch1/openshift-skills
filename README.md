@@ -41,11 +41,9 @@ macOS または Linux で、このリポジトリをクローンし、ルート�
 ├── CLAUDE.md                 # このリポジトリで作業するときの Claude Code への指示
 ├── sample/                   # スキルが作るものの例
 │
-│   # 以下は、スキルが作るもの（Git 管理対象外）
-├── runbooks/                 # openshift-runbook の手順
-├── must-gather-analyses/     # openshift-must-gather-analysis のケース
-├── gws-doc-reviews/          # openshift-gws-doc-review のレビュー結果
-└── .rhkcs/                   # rhkcs-mcp-setup が導入した MCP サーバー（token を含む）
+├── input/<skill-name>/       # スキルが読むもの（must-gather など）。中身は Git 管理対象外
+├── output/<skill-name>/      # スキルが作るもの（手順書、報告書、レビュー結果）。中身は Git 管理対象外
+└── .rhkcs/                   # rhkcs-mcp-setup が導入した MCP サーバー（token を含む。Git 管理対象外）
 ```
 
 `.claude/settings.json` の許可は、スキルをこのリポジトリの `.claude/skills/` に置き、リポジトリのルートから実行する前提で書いています。

@@ -1,6 +1,6 @@
 {
   "env": {
-    "OMCCONFIG": "must-gather-analyses/.omc/omc.json"
+    "OMCCONFIG": "output/openshift-must-gather-analysis/.omc/omc.json"
   },
   "permissions": {
     "allow": [
@@ -44,8 +44,7 @@
       "mcp__rhkcs__get_kcs",
       "mcp__rhdocs__redhat_docs_search",
       "mcp__rhdocs__redhat_docs_fetch",
-      "Edit(runbooks/**)",
-      "Edit(must-gather-analyses/**)",
+      "Edit(output/**)",
       "Bash(sort)",
       "Bash(sort -u)",
       "Bash(sort -n)",
@@ -78,8 +77,7 @@
       "Bash(bash .claude/skills/rhkcs-mcp-setup/scripts/rhkcs.sh build)",
       "Bash(bash .claude/skills/rhkcs-mcp-setup/scripts/rhkcs.sh permissions)",
       "Bash(bash .claude/skills/openshift-gws-doc-review/scripts/review.sh fetch:*)",
-      "Bash(bash .claude/skills/openshift-gws-doc-review/scripts/review.sh clean)",
-      "Edit(gws-doc-reviews/**)"
+      "Bash(bash .claude/skills/openshift-gws-doc-review/scripts/review.sh clean)"
     ],
     "deny": [
       "Read(./.rhkcs/token)",

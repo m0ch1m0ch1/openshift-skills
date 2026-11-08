@@ -1,7 +1,7 @@
 # 調査報告: kube-apiserver の installer Pod (installer-10) が Error になっている
 
 - 調査日: 2026-11-04
-- must-gather: `must-gather-analyses/20261104-005705/must-gather/must-gather.local.<番号>/quay-io-openshift-release-dev-ocp-v4-0-art-dev-sha256-<ダイジェスト>`（取得日時: 2026-11-03 15:57:05.95425792 +0000 UTC）
+- must-gather: `input/openshift-must-gather-analysis/20261104-005705/must-gather.local.<番号>/quay-io-openshift-release-dev-ocp-v4-0-art-dev-sha256-<ダイジェスト>`（取得日時: 2026-11-03 15:57:05.95425792 +0000 UTC）
 - クラスタのバージョン: 4.22.20
 - 根拠のパスは、must-gather のルート（上記）からの相対パスで、`ファイル:行` の形で示す。
 - 時刻は、特に断らない限り UTC（日本時間は +9 時間）。

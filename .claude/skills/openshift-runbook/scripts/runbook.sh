@@ -27,10 +27,10 @@
 #   (lint と plan は、[NG] があると 1 を返す。どのコマンドも、引数の誤りは 3)
 #
 # 環境変数:
-#   RUNBOOK_DIR      手順を置くディレクトリ (既定: Git リポジトリのルートの runbooks/。指定先はリポジトリ内に限る)
+#   RUNBOOK_DIR      手順を置くディレクトリ (既定: Git リポジトリのルートの output/openshift-runbook/。指定先はリポジトリ内に限る)
 #                    相対パスは実行時のカレントディレクトリを基準にする。
 #   RUNBOOK_TIMEOUT  削除を待つ時間の上限 (既定: 300s)
-#   一時ファイルと kubeconfig は runbooks/.runtime/ に作り、終了時に削除する (適用一覧の更新用は run/ に作る)。
+#   一時ファイルと kubeconfig は output/openshift-runbook/.runtime/ に作り、終了時に削除する (適用一覧の更新用は run/ に作る)。
 #   OCP_VERSION      lint で確認するドキュメントのバージョン (既定: 接続中のクラスタのバージョン)
 #
 # 検証の記録 (<RUNBOOK_DIR>/<name>/run/):
@@ -44,9 +44,9 @@
 #   logs/        ステップ・rollback・cleanup のログ (--keep の再適用は logs/reapply/)
 set -uo pipefail
 TIMEOUT="${RUNBOOK_TIMEOUT:-300s}"
-# 手順の置き場所: 既定は Git リポジトリのルートの runbooks/。作業中にカレントディレクトリが変わっても同じ場所を使う
+# 手順の置き場所: 既定は Git リポジトリのルートの output/openshift-runbook/。作業中にカレントディレクトリが変わっても同じ場所を使う
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo '[NG] Git リポジトリ内で実行してください'; exit 3; }
-DIR="${RUNBOOK_DIR:-$ROOT/runbooks}"
+DIR="${RUNBOOK_DIR:-$ROOT/output/openshift-runbook}"
 case "$DIR" in /*) ;; *) DIR="$PWD/$DIR";; esac
 # 表記だけを整える。.. は解決せず、シンボリックリンクとともに safe_path で拒否する。
 DIR="$DIR/"
@@ -108,9 +108,9 @@ remove_tree() {
 WORK=""
 init_work() {
   [ -z "$WORK" ] || return 0
-  safe_path "$ROOT/runbooks/.runtime" || return 1
-  mkdir -p "$ROOT/runbooks/.runtime" || return 1
-  WORK="$(mktemp -d "$ROOT/runbooks/.runtime/session.XXXXXX")" || return 1
+  safe_path "$ROOT/output/openshift-runbook/.runtime" || return 1
+  mkdir -p "$ROOT/output/openshift-runbook/.runtime" || return 1
+  WORK="$(mktemp -d "$ROOT/output/openshift-runbook/.runtime/session.XXXXXX")" || return 1
   chmod 700 "$WORK" || return 1
   export TMPDIR="$WORK" WORK
 }
