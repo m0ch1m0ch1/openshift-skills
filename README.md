@@ -8,6 +8,7 @@ OpenShift の作業を支援する Claude Code 用のスキル集です。
 | --- | --- | --- | --- |
 | [openshift-runbook](.claude/skills/openshift-runbook/README.md) | 設定や構築をしたい | 公式ドキュメントをもとに成功条件（DoD）を決め、YAML と確認スクリプトを作る。承認を得てから、接続中のクラスタで適用・確認・切り戻しまで試し、失敗したら原因を調べて直す | 検証済みの手順書（`runbook.md`）。公式ドキュメントの手順の形式で、日本語で書き、検証結果と出力例が付く |
 | [openshift-must-gather-analysis](.claude/skills/openshift-must-gather-analysis/README.md) | 起きた事象の原因を知りたい | must-gather を omc で調べ、事象が現れている場所から原因へさかのぼる。調べることを `checklist.md` で示しながら進める。クラスタには接続しない | 原因と対処案の報告書（`report.md`）。事実には must-gather のファイルと行の根拠が、対処案には情報元が付く |
+| [openshift-gws-doc-review](.claude/skills/openshift-gws-doc-review/README.md) | 資料（Google ドキュメント・スライド）の技術的な内容を確かめたい | 資料を gws で読み取り、技術的な正しさとサポートの範囲を、公式ドキュメントやナレッジベースと突き合わせる | レビュー結果の Markdown。誤りと懸念点を、場所・内容・根拠の表で書く |
 
 前提条件と使い方は各スキルの README を、できあがるものの例は [sample/](sample/README.md) を参照してください。
 
@@ -17,7 +18,7 @@ macOS または Linux で、このリポジトリをクローンし、ルート�
 
 ## Red Hat の情報源をつなぐ（任意）
 
-つなぐと、スキルが Red Hat の公式ドキュメントとナレッジベースを直接読みます。つながなくても、どちらのスキルも使えます（つながっていないときは、つながずに進めてよいかをスキルが確認します）。
+つなぐと、スキルが Red Hat の公式ドキュメントとナレッジベースを直接読みます。つながなくても、どのスキルも使えます（つながっていないときは、つながずに進めてよいかをスキルが確認します）。
 
 | 情報源 | つなぎ方 | できるようになること |
 | --- | --- | --- |
@@ -43,6 +44,7 @@ macOS または Linux で、このリポジトリをクローンし、ルート�
 │   # 以下は、スキルが作るもの（Git 管理対象外）
 ├── runbooks/                 # openshift-runbook の手順
 ├── must-gather-analyses/     # openshift-must-gather-analysis のケース
+├── gws-doc-reviews/          # openshift-gws-doc-review のレビュー結果
 └── .rhkcs/                   # rhkcs-mcp-setup が導入した MCP サーバー（token を含む）
 ```
 
