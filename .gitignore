@@ -1,6 +1,11 @@
 .DS_Store
-runbooks/
-must-gather-analyses/
-gws-doc-reviews/
 .rhkcs/
 .claude/settings.local.json
+
+# input/<スキル名>/ と output/<スキル名>/ は、フォルダだけを管理し、中身は管理しない
+/input/**
+/output/**
+!/input/*/
+!/output/*/
+!/input/*/.gitkeep
+!/output/*/.gitkeep

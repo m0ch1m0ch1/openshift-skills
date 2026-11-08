@@ -7,7 +7,7 @@ argument-hint: "[適用したい設定]"
 
 # openshift-runbook
 
-`T` は `bash .claude/skills/openshift-runbook/scripts/runbook.sh` の略で、リポジトリのルートからこの形のまま実行する。出力の `案内:` と `次:` に従う（手順は Git リポジトリのルートの `runbooks/<name>/` に置かれる）。ただし、「ユーザーに確認すること」にある操作は、`次:` があっても確認してから行う。
+`T` は `bash .claude/skills/openshift-runbook/scripts/runbook.sh` の略で、リポジトリのルートからこの形のまま実行する。出力の `案内:` と `次:` に従う（手順は Git リポジトリのルートの `output/openshift-runbook/<name>/` に置かれる）。ただし、「ユーザーに確認すること」にある操作は、`次:` があっても確認してから行う。
 
 下の番号付きの節を順に行う。
 
@@ -100,4 +100,4 @@ AskUserQuestion で確認し、回答なしに進めない。既に得た承認�
 - 記録の準備・保存に失敗したら、対応するクラスタ変更を始めない。スキルが実行する切り戻しスクリプトは、ファイルへの展開と構文検査に成功した場合だけ実行する。
 - 相対パスの `RUNBOOK_DIR` は実行時のカレントディレクトリを基準に絶対パスへ変換してから、安全性を検査する。
 - cleanup は YAML を逆順に削除し、存在しないことを確認できたものから適用記録を外す。途中で失敗・中断したら、残りを次の cleanup で再開する。適用一覧の更新用一時ファイルは、同じファイルシステム内で置き換えるため run/ に作る。
-- その他の一時ファイル・kubeconfig は Git 管理対象外の `runbooks/.runtime/` に置く。終了時に通常ファイルと空ディレクトリを順に削除する。
+- その他の一時ファイル・kubeconfig は Git 管理対象外の `output/openshift-runbook/.runtime/` に置く。終了時に通常ファイルと空ディレクトリを順に削除する。

@@ -5,11 +5,14 @@
 #
 # 使い方 (<file> と <subpath> は、must-gather のルートからの相対パス):
 #   mg.sh check                              omc の導入状況と、must-gather の置き場所を確認する
-#   mg.sh list                               ケース (must-gather-analyses/<case>/) の一覧と、報告書の状態 (人が使う。スキルは使わない)
+#   mg.sh list                               ケースの一覧と、報告書の状態 (人が使う。スキルは使わない)
 #   mg.sh new      [<case>]                  ケースのディレクトリを作り、must-gather を置く場所を表示する (ケース名の既定: 仮の new-<作成日時>)
-#                                            置き場所の直下に置かれた must-gather があれば、このケースに移す
-#   mg.sh prepare  <case>                    must-gather-analyses/<case>/must-gather/ に置いた must-gather を omc use で選ぶ
-#                                            must-gather/ の外 (ケースのディレクトリの直下) に置かれていれば、must-gather/ に移す
+#                                            input/openshift-must-gather-analysis/ の直下にケースに入っていない must-gather があれば、その一覧も表示する
+#                                            input/openshift-must-gather-analysis/<case>/ だけがあれば (利用者が作ったときなど)、それをケースにする
+#   mg.sh prepare  <case> [<name>]           input/openshift-must-gather-analysis/<case>/ に置いた must-gather を omc use で選ぶ
+#                                            input/openshift-must-gather-analysis/<case>/ だけがあれば、それをケースにする
+#                                            name を指定すると、input/openshift-must-gather-analysis/ の直下の name (ケースに入っていない must-gather) をケースに移す
+#                                            name が無く、ケースが空で、直下にケースに入っていない must-gather があれば、その一覧を表示して止まる
 #                                            アーカイブ (tar.gz / tgz / tar / tar.xz / zip) を置いた場合は、その場で展開し、元のアーカイブを消す
 #                                            ケース名が仮の new-<作成日時> なら、must-gather の取得日時 (日本時間の YYYYMMDD-HHMMSS) に付け直す
 #                                            (展開先の外を指すファイルを含むアーカイブや、一覧できないアーカイブは展開しない。
@@ -43,20 +46,25 @@
 #   (終了コード: 0=OK 1=lint などの NG 3=開始できない 10=omc が無い)
 #
 # 環境変数:
-#   ANALYSIS_DIR  調査 (ケース) を置くディレクトリ (既定: リポジトリのルートの must-gather-analyses/。ルートはスクリプトの場所から決める)
-#   MG_MAX        各サブコマンドが表示する最大行数 (既定: 50)
-#   OMCCONFIG     omc の設定ファイル (どの must-gather を使うか)。既定: must-gather-analyses/.omc/omc.json (~/.omc の代わり)
-#   ANALYSIS_DIR と OMCCONFIG はリポジトリ内に限定し、途中のシンボリックリンクも拒否する。
+#   MUST_GATHER_DIR  must-gather を置くディレクトリ (既定: リポジトリのルートの input/openshift-must-gather-analysis/。ルートはスクリプトの場所から決める)
+#   ANALYSIS_DIR     確認事項と報告書を置くディレクトリ (既定: リポジトリのルートの output/openshift-must-gather-analysis/)
+#   MG_MAX           各サブコマンドが表示する最大行数 (既定: 50)
+#   OMCCONFIG        omc の設定ファイル (どの must-gather を使うか)。既定: output/openshift-must-gather-analysis/.omc/omc.json (~/.omc の代わり)
+#   MUST_GATHER_DIR、ANALYSIS_DIR、OMCCONFIG はリポジトリ内に限定し、途中のシンボリックリンクも拒否する。
 #   相対パスを指定した場合は、リポジトリのルートを基準にする。
 #
-# ケースのディレクトリ: must-gather-analyses/<case>/ の must-gather/ (調べる対象)、checklist.md (事象・確認事項・調査項目)、report.md (調査報告)
+# ケースのディレクトリ: input/openshift-must-gather-analysis/<case>/ (調べる must-gather)、
+#   output/openshift-must-gather-analysis/<case>/ の checklist.md (事象・確認事項・調査項目) と report.md (調査報告)。
+#   両方にあるものをケースとし、input/openshift-must-gather-analysis/ の直下のそれ以外のものは、ケースに入っていない must-gather とする
 #
 # 根拠の書き方: must-gather のルート (cluster-scoped-resources があるディレクトリ) からの相対パスと行番号を、
 #   `namespaces/<ns>/pods/<pod>/<container>/<container>/logs/current.log:120` (範囲は :120-125) の形で書く
 set -uo pipefail
 # リポジトリのルートは、実行した場所ではなく、スクリプトの場所 (.claude/skills/<skill>/scripts/) から決める
 TOP="$(cd "$(dirname "$0")/../../../.." && pwd)"
-DIR="${ANALYSIS_DIR:-$TOP/must-gather-analyses}"
+IN="${MUST_GATHER_DIR:-$TOP/input/openshift-must-gather-analysis}"
+case "$IN" in /*) ;; *) IN="$TOP/$IN";; esac
+DIR="${ANALYSIS_DIR:-$TOP/output/openshift-must-gather-analysis}"
 case "$DIR" in /*) ;; *) DIR="$TOP/$DIR";; esac
 OMCCONFIG="${OMCCONFIG:-$DIR/.omc/omc.json}"
 case "$OMCCONFIG" in /*) ;; *) OMCCONFIG="$TOP/$OMCCONFIG";; esac
@@ -79,8 +87,8 @@ repo_path() {
   done
 }
 init_work() {
-  repo_path "$DIR"; repo_path "$OMCCONFIG"
-  mkdir -p "$DIR" || die "作業場所を作れません: $DIR"
+  repo_path "$IN"; repo_path "$DIR"; repo_path "$OMCCONFIG"
+  mkdir -p "$IN" "$DIR" || die "作業場所を作れません: $IN、$DIR"
   WORK="$(mktemp -d "$DIR/.mg-work.XXXXXX")" || die "一時ディレクトリを作れません"
   # sort などの一時ファイルも、この呼び出し専用の場所に置く。
   TMPDIR="$WORK"; export TMPDIR
@@ -105,13 +113,13 @@ root() {
     d="${d%/cluster-scoped-resources}"
     [ -n "$best" ] || best="$d"
     if [ -d "$d/cluster-scoped-resources/config.openshift.io/clusterversions" ]; then best="$d"; break; fi
-  done < <(find "$DIR/$1/must-gather" -maxdepth 6 -type d -name cluster-scoped-resources 2>/dev/null | LC_ALL=C sort)
+  done < <(find "$IN/$1" -maxdepth 6 -type d -name cluster-scoped-resources 2>/dev/null | LC_ALL=C sort)
   [ -n "$best" ] && echo "$best"
 }
 need_root() {
-  repo_path "$DIR/$SLUG/must-gather"
+  repo_path "$IN/$SLUG"
   no_outside_links "資料を読みません"
-  R="$(root "$SLUG")" || { echo "[NG] $DIR/$SLUG/must-gather/ に must-gather が見つかりません (cluster-scoped-resources を含むディレクトリ)"; echo "案内: must-gather のアーカイブか、展開したディレクトリを $DIR/$SLUG/must-gather/ に置いてから、mg.sh prepare $SLUG を実行する"; exit 3; }
+  R="$(root "$SLUG")" || { echo "[NG] $IN/$SLUG/ に must-gather が見つかりません (cluster-scoped-resources を含むディレクトリ)"; echo "案内: must-gather のアーカイブか、展開したディレクトリを $IN/$SLUG/ に置いてから、mg.sh prepare $SLUG を実行する"; exit 3; }
   RR="$(cd -P "$R" && pwd -P)"   # シンボリックリンクを辿った、ルートの実際の場所
 }
 # inside <パス>: 実際の場所 (途中のシンボリックリンクを辿った先) が、must-gather のルートの下にあるか
@@ -124,16 +132,16 @@ inside() {
 ok_file() { case "/$1/" in //*|*/../*) return 1;; esac; [ -f "$R/$1" ] && [ ! -L "$R/$1" ] && inside "$R/$1"; }
 need_file() { ok_file "$1" || die "$1 がありません (must-gather のルートからの相対パスで指定する。.. やシンボリックリンク、ルートの外を指すものは読まない)"; }
 need_omc() { command -v omc >/dev/null 2>&1 || { echo "[NG] omc がありません"; echo "次: mg.sh check"; exit 10; }; }
-# no_outside_links <しないこと>: must-gather/ の中に、絶対パスか .. を指すシンボリックリンクがあれば、止める
+# no_outside_links <しないこと>: ケースの must-gather の中に、絶対パスか .. を指すシンボリックリンクがあれば、止める
 #   omc、アーカイブの展開 (tar・unzip)、find はリンクを辿るため、その前に確かめる
-#   (どのリンクも、そのディレクトリの下だけを指していれば、リンクを辿っても must-gather/ の外には出ない)
+#   (どのリンクも、そのディレクトリの下だけを指していれば、リンクを辿ってもケースの must-gather の外には出ない)
 no_outside_links() {
   local l t
   while IFS= read -r -d '' l; do
     t="$(readlink "$l")"
-    case "/$t/" in //*|*/../*) echo "[NG] must-gather の外を指す可能性のあるシンボリックリンクがあるため、$1: ${l#"$DIR"/} -> $t"
+    case "/$t/" in //*|*/../*) echo "[NG] must-gather の外を指す可能性のあるシンボリックリンクがあるため、$1: ${l#"$IN"/} -> $t"
       echo "案内: must-gather を取り直すか、そのシンボリックリンクを消すかをユーザーに聞く"; exit 3;; esac
-  done < <(find "$DIR/$SLUG/must-gather" -type l -print0 2>/dev/null)
+  done < <(find "$IN/$SLUG" -type l -print0 2>/dev/null)
 }
 # use_mg: omc の対象を、このケースの must-gather にする (omc use は全体の設定なので、毎回選び直す)
 use_mg() { need_root; need_omc; no_outside_links "omc では読みません"; mkdir -p "$(dirname "$OMCCONFIG")"; omc use "$R" >/dev/null 2>&1 || die "omc use に失敗しました: $R"; }
@@ -199,11 +207,46 @@ name_of() { jst "$1" '+%Y%m%d-%H%M%S'; }
 # loose: 置き場所の直下に置かれた must-gather (ディレクトリかアーカイブ。ケースのディレクトリ以外)
 loose() {
   local f
-  for f in "$DIR"/*; do
-    [ -e "$f" ] || continue
-    [ -d "$f/must-gather" ] && continue
+  for f in "$IN"/*; do
+    [ -e "$f" ] && [ ! -L "$f" ] || continue
+    [ -d "$DIR/${f##*/}" ] && continue
     if [ -d "$f" ] && find "$f" -maxdepth 6 -type d -name cluster-scoped-resources 2>/dev/null | has -E .; then echo "$f"
     elif [ -f "$f" ]; then case "$f" in *.tar.gz|*.tgz|*.tar.xz|*.tar|*.zip) echo "$f";; esac; fi
+  done
+}
+# list_loose: 置き場所の直下に置かれた must-gather の名前を 1 行ずつ出す。1 つも無ければ偽
+list_loose() {
+  local f found=1
+  while IFS= read -r f; do echo "  - ${f##*/}"; found=0; done < <(loose)
+  return $found
+}
+# take_loose <case> <name>: 置き場所の直下に置かれた must-gather のうち、name だけをケースに移す
+#   どれを使うかはユーザーが選ぶ (別のケースのつもりで置かれたものを取り込まないよう、まとめては移さない)
+take_loose() {
+  local f
+  [[ $2 != */* && $2 != . && $2 != .. ]] || die "name は $IN/ の直下のファイル名かディレクトリ名で指定する: $2"
+  while IFS= read -r f; do
+    [ "${f##*/}" = "$2" ] || continue
+    mv "$f" "$IN/$1/" || die "移せません: $f"
+    echo "移しました: $2 → $1/"; return 0
+  done < <(loose)
+  echo "[NG] $IN/ の直下に、ケースに入っていない must-gather $2 はありません"
+  list_loose > "$WORK/loose" && { echo "ケースに入っていない must-gather:"; cat "$WORK/loose"; }
+  exit 3
+}
+# adopt <case>: input にだけあるディレクトリ (利用者が作ったものなど) を、その名前のケースにする。当たらなければ偽
+adopt() {
+  [ -d "$IN/$1" ] && [ ! -e "$DIR/$1" ] || return 1
+  repo_path "$IN/$1"; repo_path "$DIR/$1"
+  mkdir "$DIR/$1" || die "ケースのディレクトリを作れません: $DIR/$1"
+  echo "[OK] $IN/$1/ を、ケース $1 にしました"
+}
+# empty_dir <dir>: .DS_Store と .gitkeep のほかに何も無いか
+empty_dir() {
+  local f
+  for f in "$1"/* "$1"/.[!.]* "$1"/..?*; do
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    case "${f##*/}" in .DS_Store|.gitkeep) ;; *) return 1;; esac
   done
 }
 
@@ -219,21 +262,27 @@ cmd_check() {
     echo "案内: 入れ方は https://github.com/gmeghnag/omc#installation を参照する (入れたら、PATH の通ったディレクトリに置く)"
     return 10
   fi
-  echo "[OK] must-gather の置き場所: $DIR"
-  [ -d "$DIR" ] || echo "[WARN] $DIR がありません (new で作る)"
+  echo "[OK] must-gather の置き場所: $IN"
+  echo "[OK] 確認事項と報告書の置き場所: $DIR"
 }
 
 cmd_list() {
-  local c r st f m rc
-  while IFS= read -r f; do echo "[WARN] ケースに入っていない must-gather: ${f#$DIR/} (mg.sh new で、新しいケースに移す)"; done < <(loose)
-  ls -d "$DIR"/*/must-gather >/dev/null 2>&1 || { echo "$DIR/ にケースはありません"; return 0; }
-  echo "| ケース | must-gather | 取得日時 | バージョン | 報告書 |"
-  echo "| --- | --- | --- | --- | --- |"
-  for c in "$DIR"/*/must-gather; do
-    c="$(basename "$(dirname "$c")")"
+  local c r st f m rc found=0
+  while IFS= read -r f; do
+    if [ -d "$f" ] && [[ ${f##*/} =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then echo "[WARN] ケースに入っていない must-gather: ${f##*/} (mg.sh prepare ${f##*/} でこの名前のケースにするか、mg.sh prepare <case> ${f##*/} でケースに移す)"
+    else echo "[WARN] ケースに入っていない must-gather: ${f##*/} (mg.sh prepare <case> ${f##*/} でケースに移す)"; fi
+  done < <(loose)
+  for c in "$DIR"/*/; do
+    c="$(basename "$c")"
+    [ -d "$IN/$c" ] || continue
+    if [ $found = 0 ]; then
+      echo "| ケース | must-gather | 取得日時 | バージョン | 報告書 |"
+      echo "| --- | --- | --- | --- | --- |"
+      found=1
+    fi
     SLUG="$c"
     if ! (
-      repo_path "$DIR/$c/must-gather"; no_outside_links "ケースを読みません"
+      repo_path "$IN/$c"; repo_path "$DIR/$c"; no_outside_links "ケースを読みません"
       for f in "$DIR/$c/report.md" "$DIR/$c/checklist.md"; do
         repo_path "$f"
         if [ -e "$f" ]; then
@@ -258,46 +307,46 @@ cmd_list() {
         continue
       fi
     fi
-    m="${r#$DIR/$c/must-gather/}"; [ "${m%%/*}" = "$m" ] || m="${m%%/*}/…"   # 長いディレクトリ名 (quay-io-…sha256-…) は省く
+    m="${r#$IN/$c}"; m="${m#/}"; m="${m:-.}"; [ "${m%%/*}" = "$m" ] || m="${m%%/*}/…"   # 長いディレクトリ名 (quay-io-…sha256-…) は省く
     if [ -n "$r" ]; then echo "| $c | $m | $(taken_at "$r") | $(version_of "$r") | $st |"
     else echo "| $c | 見つからない | - | - | $st |"; fi
   done
+  [ $found = 1 ] || echo "ケースはありません"
 }
 
 # new [<case>]: ケースのディレクトリを作り、must-gather を置く場所を表示する
 cmd_new() {
   local c="${SLUG:-new-$(date '+%Y%m%d-%H%M%S')}"
   [[ $c =~ ^[a-z0-9][a-z0-9._-]*$ ]] || die "ケース名は英小文字・数字・._- にする: $c"
-  [ ! -e "$DIR/$c" ] || { echo "[NG] $DIR/$c は既にあります"; echo "案内: 別のケース名にする"; exit 3; }
-  local f moved=0
-  mkdir -p "$DIR/$c/must-gather"
+  if adopt "$c"; then echo "次: mg.sh prepare $c"; return 0; fi
+  [ ! -e "$IN/$c" ] && [ ! -e "$DIR/$c" ] || { echo "[NG] ケース $c は既にあります"; echo "案内: 別のケース名にする"; exit 3; }
+  mkdir -p "$IN/$c" "$DIR/$c" || die "ケースのディレクトリを作れません: $c"
   echo "[OK] ケース: $c"
-  while IFS= read -r f; do
-    mv "$f" "$DIR/$c/must-gather/" && { echo "移しました: ${f#$DIR/} → $c/must-gather/"; moved=1; }
-  done < <(loose)
-  if [ $moved = 1 ]; then echo "次: mg.sh prepare $c"; return 0; fi
-  echo "must-gather を置く場所: $DIR/$c/must-gather/"
+  echo "must-gather を置く場所: $IN/$c/"
+  if list_loose > "$WORK/loose"; then
+    echo "$IN/ の直下に、ケースに入っていない must-gather があります:"; cat "$WORK/loose"
+    echo "案内: このケースでどれを使うかをユーザーに聞く (どれも使わないなら、上の場所に置いてもらう)"
+    echo "次: 選ばれたら mg.sh prepare $c <name>、上の場所に置いたら mg.sh prepare $c"
+    return 0
+  fi
   echo "案内: must-gather のアーカイブ (tar.gz など) か、展開したディレクトリを、上の場所に置く (コピーか移動)"
   echo "次: 置いたら mg.sh prepare $c"
 }
 
-# prepare <case>: ケースの must-gather/ に置いたものを使う。アーカイブはその場で展開する
+# prepare <case> [<name>]: ケースの must-gather の置き場所に置いたものを使う。アーカイブはその場で展開する
 cmd_prepare() {
-  local c="$DIR/$SLUG/must-gather" a d lst
-  [ -d "$c" ] || die "$c がありません (先に mg.sh new)"
-  repo_path "$c"
+  local c="$IN/$SLUG" a d lst="$WORK/archive-list"
+  if [ -n "${1:-}" ]; then take_loose "$SLUG" "$1"
+  elif empty_dir "$c" && list_loose > "$WORK/loose"; then
+    # ケースが空で、置き場所の直下に置かれたものがあれば、どれを使うかを選んでもらう
+    echo "[NG] $c/ に must-gather がありません。$IN/ の直下に、ケースに入っていない must-gather があります:"; cat "$WORK/loose"
+    echo "案内: このケースでどれを使うかをユーザーに聞く (どれも使わないなら、$c/ に置いてもらう)"
+    echo "次: 選ばれたら mg.sh prepare $SLUG <name>"
+    exit 3
+  fi
   no_outside_links "アーカイブを展開しません"
   # 展開済みの must-gather が無ければ、置かれたアーカイブを展開する
   if ! root "$SLUG" >/dev/null; then
-    # must-gather/ の外 (ケースのディレクトリの直下) に置かれた must-gather は、must-gather/ に移す
-    for a in "$DIR/$SLUG"/*; do
-      case "${a##*/}" in must-gather|checklist.md|report.md) continue;; esac
-      [ -e "$a" ] && [ ! -L "$a" ] || continue
-      if [ -d "$a" ]; then find "$a" -maxdepth 6 -type d -name cluster-scoped-resources 2>/dev/null | has -E . || continue
-      else case "$a" in *.tar.gz|*.tgz|*.tar.xz|*.tar|*.zip) ;; *) continue;; esac; fi
-      mv "$a" "$c/" || die "移せません: $a"
-      echo "移しました: ${a#$DIR/} → $SLUG/must-gather/"
-    done
     while IFS= read -r a; do
       echo "展開します: ${a#$c/}"
       # 前に展開したアーカイブ (や置かれたディレクトリ) に外を指すリンクがあると、tar や unzip がそのリンクを通って外に書くため、
@@ -305,7 +354,6 @@ cmd_prepare() {
       no_outside_links "アーカイブを展開しません"
       # 中のファイルが、絶対パスや .. で展開先 (ケースのディレクトリ) の外を指していれば、展開しない
       #   一覧はファイルに受ける (パイプにすると、pipefail のもとで一覧のコマンドの失敗が判定を打ち消す)。一覧できなければ展開しない
-      lst="$(mktemp "$DIR/$SLUG/.archive-list.XXXXXX")" || die "一時ファイルを作れません: $DIR/$SLUG"
       if ! case "$a" in
              *.zip) unzip -Z1 "$a" ;;
              *)     tar tf "$a" ;;
@@ -328,8 +376,13 @@ cmd_prepare() {
   local base to n=1
   if [[ $SLUG =~ ^new-[0-9]{8}-[0-9]{6}$ ]] && base="$(name_of "$R")" && [ -n "$base" ]; then
     to="$base"
-    while [ -e "$DIR/$to" ]; do n=$((n + 1)); to="$base-$n"; done   # 同じ名前のケースがあれば -2, -3, …
-    mv "$DIR/$SLUG" "$DIR/$to" || die "ケース名を変えられません: $SLUG → $to"
+    while [ -e "$IN/$to" ] || [ -e "$DIR/$to" ]; do n=$((n + 1)); to="$base-$n"; done   # 同じ名前のケースがあれば -2, -3, …
+    mv "$IN/$SLUG" "$IN/$to" || die "ケース名を変えられません: $SLUG → $to"
+    # input と output で名前がずれないよう、output を変えられなければ input を元に戻す
+    if ! mv "$DIR/$SLUG" "$DIR/$to"; then
+      mv "$IN/$to" "$IN/$SLUG" || die "ケース名を変えられず、元にも戻せません: $IN/$to を $IN/$SLUG に戻す"
+      die "ケース名を変えられません: $SLUG → $to (元に戻した)"
+    fi
     echo "[OK] ケース名を変えました: $SLUG → $to"
     SLUG="$to"; need_root
   fi
@@ -670,7 +723,7 @@ cmd_events() {
 
 # fill <template>: ひな形の @…@ を、ケースの情報で置き換えて出す (値に | や & があっても壊れないよう、文字列として置き換える)
 fill() {
-  F_DATE="$(date '+%Y-%m-%d')" F_MG="$(basename "$DIR")/${R#$DIR/}" F_TAKEN="$(taken_at "$R")" \
+  F_DATE="$(date '+%Y-%m-%d')" F_MG="${R#$TOP/}" F_TAKEN="$(taken_at "$R")" \
   F_JST="$(jst "$R" '+%Y-%m-%d %H:%M:%S')" F_VERSION="$(version_of "$R")" awk '
     function rep(s, k, v,   i) { while ((i = index(s, k)) > 0) s = substr(s, 1, i - 1) v substr(s, i + length(k)); return s }
     BEGIN { split("DATE MG TAKEN JST VERSION", ks, " "); for (i in ks) { v = ENVIRON["F_" ks[i]]; m["@" ks[i] "@"] = (v == "" ? "不明" : v) } }
@@ -833,8 +886,9 @@ case "$CMD" in
   new) cmd_new;;
   prepare|plan|items|overview|ns|cond|pod|logs|errors|count|events|grep|show|report|lint)
     [[ $SLUG =~ ^[a-z0-9][a-z0-9._-]*$ ]] || die "usage: mg.sh $CMD <case> (ケース名は英小文字・数字・._-)"
-    [ -d "$DIR/$SLUG" ] || die "$DIR/$SLUG がありません (先に mg.sh new)"
-    repo_path "$DIR/$SLUG"
+    [ "$CMD" != prepare ] || adopt "$SLUG" || true
+    [ -d "$IN/$SLUG" ] && [ -d "$DIR/$SLUG" ] || die "ケース $SLUG がありません (先に mg.sh new)"
+    repo_path "$IN/$SLUG"; repo_path "$DIR/$SLUG"
     for output in checklist.md report.md report.md.tmp; do repo_path "$DIR/$SLUG/$output"; done
     "cmd_$CMD" "${@:3}";;
   *) usage;;

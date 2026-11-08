@@ -42,10 +42,10 @@ openshift-runbook/
 └── scripts/runbook.sh            # 処理の本体（スキルが内部で使う。クラスタの確認・ひな形・lint・適用内容の表示・検証・クリーンアップ・手順書の生成）
 ```
 
-作成した手順は、Git リポジトリのルートの `runbooks/<name>/` に置かれます（環境変数 `RUNBOOK_DIR` で変えられます）。
+作成した手順は、Git リポジトリのルートの `output/openshift-runbook/<name>/` に置かれます（環境変数 `RUNBOOK_DIR` で変えられます）。
 
 ```text
-runbooks/<name>/
+output/openshift-runbook/<name>/
 ├── spec.md                       # 仕様（概要・成功条件・前提条件・パラメータ・アクセス情報）
 ├── manifests/NN-*.yaml           # 適用する YAML（YAML だけを置く）
 ├── scripts/                      # 確認スクリプト、YAML で書けない作業、切り戻し (rollback.sh)
