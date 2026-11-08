@@ -68,11 +68,12 @@ Red Hat 公式ドキュメントの手順モジュールに合わせる。
 | 対象 | 待つ | 状態を表示する |
 | --- | --- | --- |
 | Pod | `oc wait pod -l <ラベル> -n <ns> --for=create --timeout=…` の後に `--for=condition=Ready` | `oc get pods -l <ラベル> -n <ns> -o wide`、`oc logs deployment/<名前> -n <ns> --tail=5` |
-| Operator | `oc wait subscription/<名前> -n <ns> --for=jsonpath='{.status.state}'=AtLatestKnown --timeout=…` と CSV の Succeeded | `oc get csv -n <ns> -o custom-columns=NAME:.metadata.name,PHASE:.status.phase`、`oc get pods -n <ns>` |
+| Operator | `oc wait subscriptions.operators.coreos.com/<名前> -n <ns> --for=jsonpath='{.status.state}'=AtLatestKnown --timeout=…` と CSV の Succeeded | `oc get csv -n <ns> -o custom-columns=NAME:.metadata.name,PHASE:.status.phase`、`oc get pods -n <ns>` |
 | Service / Route | `--for=jsonpath=…` で外部 IP などを待つ | `oc get service` / `oc get route` と `curl` の応答 |
 
 - Pod は、先に `--for=create` で作られるのを待つ（いきなり `--for=condition=Ready` だと、Pod が無いときに即失敗する）。
 - `oc rollout status` は使わない（進み具合しか出ず、Pod の状態が分からない）。アプリケーションは、起動したことが分かるログも表示する。
+- Operator の Subscription は、check.sh でも rollback.sh でも `subscriptions.operators.coreos.com` と書く。ほかの API グループが同じ名前のリソースを持つ可能性があり、`subscription` と略すと、そちらを指すことがある（check.sh は見つからずに失敗し、rollback.sh の `--ignore-not-found` は何も消さずに成功する）。
 
 ## scripts/rollback.sh
 

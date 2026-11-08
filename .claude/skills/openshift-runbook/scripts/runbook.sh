@@ -476,9 +476,10 @@ diagnose() {
     oc -n "$ns" get all -o wide 2>/dev/null
     echo "--- events"; oc -n "$ns" get events --sort-by=.lastTimestamp | tail -20
     # Operator のリソースがあるときだけ、見出しを付けて出す
-    out="$(oc -n "$ns" get subscription,csv,installplan 2>/dev/null)"
+    #   ほかの API グループが同じ名前のリソースを持つ可能性があるため、グループまで書く
+    out="$(oc -n "$ns" get subscriptions.operators.coreos.com,clusterserviceversions.operators.coreos.com,installplans.operators.coreos.com 2>/dev/null)"
     [ -z "$out" ] || { echo "--- subscription / csv / installplan"; printf '%s\n' "$out"; echo "--- subscription の状態"
-      oc -n "$ns" get subscription -o jsonpath='{range .items[*]}{.metadata.name}: {range .status.conditions[*]}{.type}={.status} {.message}; {end}{"\n"}{end}' 2>/dev/null; }
+      oc -n "$ns" get subscriptions.operators.coreos.com -o jsonpath='{range .items[*]}{.metadata.name}: {range .status.conditions[*]}{.type}={.status} {.message}; {end}{"\n"}{end}' 2>/dev/null; }
     for p in $(oc -n "$ns" get pods -o name); do echo "--- logs $p"; oc -n "$ns" logs "$p" --all-containers --tail=20; done
   done
 }
