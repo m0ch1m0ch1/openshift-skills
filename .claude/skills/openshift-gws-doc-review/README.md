@@ -26,4 +26,4 @@ Google ドキュメント・スライドを [gws](https://github.com/googleworks
 
 レビュー結果を `output/openshift-gws-doc-review/<レビューした日>_<資料名>.md` に保存します。
 
-読み取った資料は、レビューの間だけ `input/openshift-gws-doc-review/` に置き、終わったら消します。
+読み取った資料は、レビューの間だけ `.tmp/openshift-gws-doc-review/` に置き、終わったら消します。

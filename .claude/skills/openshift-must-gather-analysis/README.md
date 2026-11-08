@@ -62,5 +62,5 @@ openshift-must-gather-analysis/
 ## データの置き場所
 
 - must-gather は `input/openshift-must-gather-analysis/<ケース名>/` に、確認事項と報告書は `output/openshift-must-gather-analysis/<ケース名>/` に置きます（Git の管理対象外。環境変数 `MUST_GATHER_DIR` と `ANALYSIS_DIR` で変えられます）。`input/openshift-must-gather-analysis/` の直下に置いた must-gather は、どれを使うかを確かめてから、ケースに移します。展開した元のアーカイブは消します。
-- omc の設定（どの must-gather を使うか）は、`~/.omc/omc.json` ではなく `output/openshift-must-gather-analysis/.omc/omc.json` に保存します（環境変数 `OMCCONFIG`。`.claude/settings.json` の `env` で設定しており、Claude Code を起動し直すと有効になります）。
+- omc の設定（どの must-gather を使うか）は、`~/.omc/omc.json` ではなく `.tmp/openshift-must-gather-analysis/omc.json` に保存します（環境変数 `OMCCONFIG`。`.claude/settings.json` の `env` で設定しており、Claude Code を起動し直すと有効になります）。
 - `mg.sh` はリポジトリの外に書き込みません。must-gather の外を指すパスやシンボリックリンクは読まず、展開先の外を指すファイルを含むアーカイブは展開しません。外を指すシンボリックリンクがあれば、続きのアーカイブも展開しません。

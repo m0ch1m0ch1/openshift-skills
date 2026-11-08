@@ -49,7 +49,7 @@
 #   MUST_GATHER_DIR  must-gather を置くディレクトリ (既定: リポジトリのルートの input/openshift-must-gather-analysis/。ルートはスクリプトの場所から決める)
 #   ANALYSIS_DIR     確認事項と報告書を置くディレクトリ (既定: リポジトリのルートの output/openshift-must-gather-analysis/)
 #   MG_MAX           各サブコマンドが表示する最大行数 (既定: 50)
-#   OMCCONFIG        omc の設定ファイル (どの must-gather を使うか)。既定: output/openshift-must-gather-analysis/.omc/omc.json (~/.omc の代わり)
+#   OMCCONFIG        omc の設定ファイル (どの must-gather を使うか)。既定: .tmp/openshift-must-gather-analysis/omc.json (~/.omc の代わり)
 #   MUST_GATHER_DIR、ANALYSIS_DIR、OMCCONFIG はリポジトリ内に限定し、途中のシンボリックリンクも拒否する。
 #   相対パスを指定した場合は、リポジトリのルートを基準にする。
 #
@@ -66,7 +66,8 @@ IN="${MUST_GATHER_DIR:-$TOP/input/openshift-must-gather-analysis}"
 case "$IN" in /*) ;; *) IN="$TOP/$IN";; esac
 DIR="${ANALYSIS_DIR:-$TOP/output/openshift-must-gather-analysis}"
 case "$DIR" in /*) ;; *) DIR="$TOP/$DIR";; esac
-OMCCONFIG="${OMCCONFIG:-$DIR/.omc/omc.json}"
+TMP="$TOP/.tmp/openshift-must-gather-analysis"   # 途中のファイル (一時ディレクトリと omc の設定)
+OMCCONFIG="${OMCCONFIG:-$TMP/omc.json}"
 case "$OMCCONFIG" in /*) ;; *) OMCCONFIG="$TOP/$OMCCONFIG";; esac
 export OMCCONFIG
 MAX="${MG_MAX:-50}"
@@ -87,9 +88,9 @@ repo_path() {
   done
 }
 init_work() {
-  repo_path "$IN"; repo_path "$DIR"; repo_path "$OMCCONFIG"
-  mkdir -p "$IN" "$DIR" || die "作業場所を作れません: $IN、$DIR"
-  WORK="$(mktemp -d "$DIR/.mg-work.XXXXXX")" || die "一時ディレクトリを作れません"
+  repo_path "$IN"; repo_path "$DIR"; repo_path "$TMP"; repo_path "$OMCCONFIG"
+  mkdir -p "$IN" "$DIR" "$TMP" || die "作業場所を作れません: $IN、$DIR、$TMP"
+  WORK="$(mktemp -d "$TMP/work.XXXXXX")" || die "一時ディレクトリを作れません"
   # sort などの一時ファイルも、この呼び出し専用の場所に置く。
   TMPDIR="$WORK"; export TMPDIR
   trap 'rm -f "$WORK"/*; rmdir "$WORK"' EXIT

@@ -1,6 +1,6 @@
 {
   "env": {
-    "OMCCONFIG": "output/openshift-must-gather-analysis/.omc/omc.json"
+    "OMCCONFIG": ".tmp/openshift-must-gather-analysis/omc.json"
   },
   "permissions": {
     "allow": [

@@ -41,8 +41,9 @@ macOS または Linux で、このリポジトリをクローンし、ルート�
 ├── CLAUDE.md                 # このリポジトリで作業するときの Claude Code への指示
 ├── sample/                   # スキルが作るものの例
 │
-├── input/<skill-name>/       # スキルが読むもの（must-gather など）。中身は Git 管理対象外
+├── input/<skill-name>/       # スキルに渡すもの（must-gather）。中身は Git 管理対象外
 ├── output/<skill-name>/      # スキルが作るもの（手順書、報告書、レビュー結果）。中身は Git 管理対象外
+├── .tmp/<skill-name>/        # スキルが途中で使い、終わったら消すもの（Git 管理対象外）
 └── .rhkcs/                   # rhkcs-mcp-setup が導入した MCP サーバー（token を含む。Git 管理対象外）
 ```
 
