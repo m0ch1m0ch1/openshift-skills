@@ -4,7 +4,7 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 
 > **注記**
 >
-> この手順は 2026-11-04 17:49、OpenShift 4.22.20 で検証済みです（詳細: run/result.md）。
+> この手順は 2026-11-08 20:16、OpenShift 4.22.21 で検証済みです（詳細: run/result.md）。
 
 ## 前提条件
 
@@ -12,7 +12,8 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 - クラスタから redhat-operators カタログと quay.io のイメージを取得できる。
 - IP アドレスプールに割り当てるアドレスが、ノードと同じ L2 セグメントにあり、ほかの機器で使用されていない。
 - 作業端末から IP アドレスプールのアドレスに HTTP でアクセスできる。
-- コマンドは、この手順書があるディレクトリ (manifests/ と scripts/ がある場所) で実行する。
+- この手順で作成するリソースが、まだ存在しない。存在する場合は実行しない（切り戻しで消えるため）。
+- manifests/ と scripts/ (rollback.sh を含む) をこの手順書と同じディレクトリにあらかじめ配置し、コマンドはそのディレクトリで実行する。
 
 ## パラメータ
 
@@ -23,13 +24,26 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 
 ## 手順
 
+### 事前確認
+
+次のコマンドを実行して、manifests/ のすべての YAML の対象リソースについて、何も表示されないことを確認します。リソース名が表示された場合は、既存リソースがあるため中止します。no matches for kind / resource mapping not found（CRD がまだ登録されていない）は、そのリソースがまだ存在しないものとして続行します。それ以外のエラー（権限・通信など）で確認できない場合は中止し、以降の手順へ進まないでください。
+
+```terminal
+$ oc get -f manifests/01-operator.yaml --ignore-not-found -o name
+$ oc get -f manifests/02-metallb.yaml --ignore-not-found -o name
+$ oc get -f manifests/03-l2.yaml --ignore-not-found -o name
+$ oc get -f manifests/04-test-app.yaml --ignore-not-found -o name
+```
+
+### 作業
+
 1. MetalLB Operator をインストールします。
 
    > **注記**
    >
    > インストールが完了するまで、通常 1〜2 分かかります。
 
-   1. 次の YAML を使用して `manifests/01-operator.yaml` ファイルを作成します。
+   1. あらかじめ配置した `manifests/01-operator.yaml` ファイルの内容が、次の YAML と一致することを確認します。
 
       ```yaml
       apiVersion: v1
@@ -79,8 +93,8 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
       1. 次のコマンドを実行して、Operator のインストールが完了するまで待機します。
 
          ```terminal
-         $ oc wait subscription/metallb-operator-sub -n metallb-system --for=jsonpath='{.status.state}'=AtLatestKnown --timeout=300s
-         $ csv=$(oc get subscription/metallb-operator-sub -n metallb-system -o jsonpath='{.status.installedCSV}')
+         $ oc wait subscriptions.operators.coreos.com/metallb-operator-sub -n metallb-system --for=jsonpath='{.status.state}'=AtLatestKnown --timeout=300s
+         $ csv=$(oc get subscriptions.operators.coreos.com/metallb-operator-sub -n metallb-system -o jsonpath='{.status.installedCSV}')
          $ oc wait csv/"$csv" -n metallb-system --for=jsonpath='{.status.phase}'=Succeeded --timeout=300s
          ```
 
@@ -88,7 +102,7 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 
          ```terminal
          subscription.operators.coreos.com/metallb-operator-sub condition met
-         clusterserviceversion.operators.coreos.com/metallb-operator.v4.22.0-202610271454 condition met
+         clusterserviceversion.operators.coreos.com/metallb-operator.v4.22.0-202611031655 condition met
          ```
 
       2. 次のコマンドを実行して、CSV の PHASE が Succeeded であることを確認します。
@@ -101,7 +115,7 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 
          ```terminal
          Name                                    Phase
-         metallb-operator.v4.22.0-202610271454   Succeeded
+         metallb-operator.v4.22.0-202611031655   Succeeded
          ```
 
       3. 次のコマンドを実行して、InstallPlan が承認されていることを確認します。
@@ -114,12 +128,12 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 
          ```terminal
          NAME            CSV                                     APPROVAL    APPROVED
-         install-c5chw   metallb-operator.v4.22.0-202610271454   Automatic   true
+         install-slg84   metallb-operator.v4.22.0-202611031655   Automatic   true
          ```
 
 2. MetalLB のインスタンスを作成します。
 
-   1. 次の YAML を使用して `manifests/02-metallb.yaml` ファイルを作成します。
+   1. あらかじめ配置した `manifests/02-metallb.yaml` ファイルの内容が、次の YAML と一致することを確認します。
 
       ```yaml
       apiVersion: metallb.io/v1beta1
@@ -159,10 +173,10 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
          **出力例**
 
          ```terminal
-         pod/controller-5f68d9f97c-5njlh condition met
-         pod/controller-5f68d9f97c-5njlh condition met
-         pod/speaker-4kt2b condition met
-         pod/speaker-4kt2b condition met
+         pod/controller-6c6b7c9c86-rsg62 condition met
+         pod/controller-6c6b7c9c86-rsg62 condition met
+         pod/speaker-kzjt4 condition met
+         pod/speaker-kzjt4 condition met
          ```
 
       2. 次のコマンドを実行して、controller の Deployment が AVAILABLE になっていることを確認します。
@@ -175,7 +189,7 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 
          ```terminal
          NAME         READY   UP-TO-DATE   AVAILABLE   AGE
-         controller   1/1     1            1           14s
+         controller   1/1     1            1           13s
          ```
 
       3. 次のコマンドを実行して、speaker の DaemonSet の READY がノード数と同じであることを確認します。
@@ -188,7 +202,7 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 
          ```terminal
          NAME      DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
-         speaker   1         1         1       1            1           kubernetes.io/os=linux   15s
+         speaker   1         1         1       1            1           kubernetes.io/os=linux   13s
          ```
 
       4. 次のコマンドを実行して、Pod の STATUS が Running であることを確認します。
@@ -201,13 +215,13 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 
          ```terminal
          NAME                          READY   STATUS    RESTARTS   AGE   IP              NODE                          NOMINATED NODE   READINESS GATES
-         controller-5f68d9f97c-5njlh   2/2     Running   0          15s   10.128.0.201    <ノード名>                    <none>           <none>
-         speaker-4kt2b                 2/2     Running   0          15s   192.0.2.82      <ノード名>                    <none>           <none>
+         controller-6c6b7c9c86-rsg62   2/2     Running   0          14s   10.128.0.13     <ノード名>                    <none>           <none>
+         speaker-kzjt4                 2/2     Running   0          14s   192.0.2.83      <ノード名>                    <none>           <none>
          ```
 
 3. IP アドレスプールと L2 アドバタイズメントを作成します。
 
-   1. 次の YAML を使用して `manifests/03-l2.yaml` ファイルを作成します。
+   1. あらかじめ配置した `manifests/03-l2.yaml` ファイルの内容が、次の YAML と一致することを確認します。
 
       ```yaml
       apiVersion: metallb.io/v1beta1
@@ -276,7 +290,7 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 
 4. 動作確認用のアプリケーションを LoadBalancer タイプの Service で公開します。
 
-   1. 次の YAML を使用して `manifests/04-test-app.yaml` ファイルを作成します。
+   1. あらかじめ配置した `manifests/04-test-app.yaml` ファイルの内容が、次の YAML と一致することを確認します。
 
       ```yaml
       apiVersion: v1
@@ -352,8 +366,8 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
       **出力例**
 
       ```terminal
-      pod/hello-656fb99587-v52ks condition met
-      pod/hello-656fb99587-v52ks condition met
+      pod/hello-656fb99587-l5vxp condition met
+      pod/hello-656fb99587-l5vxp condition met
       ```
 
    2. 次のコマンドを実行して、Pod の STATUS が Running であることを確認します。
@@ -365,8 +379,8 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
       **出力例**
 
       ```terminal
-      NAME                     READY   STATUS    RESTARTS   AGE   IP             NODE                          NOMINATED NODE   READINESS GATES
-      hello-656fb99587-v52ks   1/1     Running   0          1s    10.128.0.207   <ノード名>                    <none>           <none>
+      NAME                     READY   STATUS    RESTARTS   AGE   IP            NODE                          NOMINATED NODE   READINESS GATES
+      hello-656fb99587-l5vxp   1/1     Running   0          20s   10.128.0.14   <ノード名>                    <none>           <none>
       ```
 
    3. 次のコマンドを実行して、nginx が起動したことをログで確認します。
@@ -378,9 +392,9 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
       **出力例**
 
       ```terminal
-      2026/11/04 08:49:00 [notice] 1#1: start worker process 36
-      2026/11/04 08:49:00 [notice] 1#1: start worker process 37
-      2026/11/04 08:49:00 [notice] 1#1: start worker process 38
+      2026/11/08 11:15:48 [notice] 1#1: start worker process 34
+      2026/11/08 11:15:48 [notice] 1#1: start worker process 35
+      2026/11/08 11:15:48 [notice] 1#1: start worker process 36
       ```
 
    4. 次のコマンドを実行して、Service に外部 IP アドレスが割り当てられるまで待機します。
@@ -404,8 +418,8 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
       **出力例**
 
       ```terminal
-      NAME    TYPE           CLUSTER-IP       EXTERNAL-IP      PORT(S)          AGE
-      hello   LoadBalancer   172.30.155.148   192.0.2.150      8080:32584/TCP   3s
+      NAME    TYPE           CLUSTER-IP      EXTERNAL-IP      PORT(S)          AGE
+      hello   LoadBalancer   172.30.96.181   192.0.2.150      8080:31356/TCP   21s
       ```
 
    6. 次のコマンドを実行して、作業端末から外部 IP アドレスにアクセスし、200 が返ることを確認します。
@@ -437,7 +451,7 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 
 ## 成功条件 (DoD)
 
-2026-11-04 17:49 の検証で確認できた成功条件に [x] を付けています。
+2026-11-08 20:16 の検証で確認できた成功条件に [x] を付けています。
 
 - [x] MetalLB Operator の CSV の PHASE が Succeeded になっている。（手順 1）
 - [x] controller と speaker の Pod が Running になっている。（手順 2）
@@ -461,35 +475,15 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
 >
 > frrk8s.metallb.io の CRD は OpenShift の Network Operator が管理しているため、削除しません。
 
-> **注記**
->
-> 次のコマンドは、同じシェルで上から順に実行します。途中で「止めます」と表示された場合は、それ以降のコマンドを実行しないでください。
-
 ### 手順
 
-1. 次のコマンドを実行して、この手順で作成していない MetalLB のリソースが無いことを確認します。
+1. 次のコマンドを実行して、切り戻しスクリプトを実行します。
 
    ```terminal
-   $ if oc get crd metallbs.metallb.io >/dev/null 2>&1; then
-     all=$(oc get metallb,ipaddresspool,l2advertisement,bgppeer,bgpadvertisement,bfdprofile,community --all-namespaces --no-headers -o custom-columns=KIND:.kind,NS:.metadata.namespace,NAME:.metadata.name)
-     others=$(printf '%s\n' "$all" | grep -vE '^(MetalLB +metallb-system +metallb|IPAddressPool +metallb-system +l2-pool|L2Advertisement +metallb-system +l2-adv)$' | grep . || true)
-     if [ -n "$others" ]; then
-       echo "この手順で作成していない MetalLB のリソースがあるため、止めます:"
-       echo "$others"
-       false
-     fi
-   fi
+   $ bash scripts/rollback.sh
    ```
 
-2. 次のコマンドを実行して、この手順で作成した MetalLB のリソースを削除します。
-
-   ```terminal
-   $ if oc get crd metallbs.metallb.io >/dev/null 2>&1; then
-     oc delete l2advertisement l2-adv -n metallb-system --ignore-not-found --timeout=300s
-     oc delete ipaddresspool l2-pool -n metallb-system --ignore-not-found --timeout=300s
-     oc delete metallb metallb -n metallb-system --ignore-not-found --timeout=300s
-   fi
-   ```
+   「止めます」と表示された場合や、コマンドが失敗した場合は、次の YAML の削除に進まないでください。
 
    **出力例**
 
@@ -497,34 +491,8 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
    l2advertisement.metallb.io "l2-adv" deleted from metallb-system namespace
    ipaddresspool.metallb.io "l2-pool" deleted from metallb-system namespace
    metallb.metallb.io "metallb" deleted from metallb-system namespace
-   ```
-
-3. 次のコマンドを実行して、MetalLB Operator の Subscription と CSV を削除します。
-
-   ```terminal
-   $ oc delete subscription metallb-operator-sub -n metallb-system --ignore-not-found
-   $ oc delete csv -n metallb-system -l operators.coreos.com/metallb-operator.metallb-system --ignore-not-found
-   ```
-
-   **出力例**
-
-   ```terminal
    subscription.operators.coreos.com "metallb-operator-sub" deleted from metallb-system namespace
-   clusterserviceversion.operators.coreos.com "metallb-operator.v4.22.0-202610271454" deleted from metallb-system namespace
-   ```
-
-4. 次のコマンドを実行して、MetalLB Operator の CRD を削除します。
-
-   ```terminal
-   $ crds=$(oc get crd -l operators.coreos.com/metallb-operator.metallb-system -o name | grep -v '\.frrk8s\.metallb\.io$' || true)
-   $ if [ -n "$crds" ]; then
-     oc delete $crds
-   fi
-   ```
-
-   **出力例**
-
-   ```terminal
+   clusterserviceversion.operators.coreos.com "metallb-operator.v4.22.0-202611031655" deleted from metallb-system namespace
    customresourcedefinition.apiextensions.k8s.io "bfdprofiles.metallb.io" deleted
    customresourcedefinition.apiextensions.k8s.io "bgpadvertisements.metallb.io" deleted
    customresourcedefinition.apiextensions.k8s.io "bgppeers.metallb.io" deleted
@@ -537,7 +505,46 @@ MetalLB Operator をインストールし、L2 モードで LoadBalancer タイ�
    customresourcedefinition.apiextensions.k8s.io "servicel2statuses.metallb.io" deleted
    ```
 
-5. 次のコマンドを実行して、作成したリソースを、適用したときと逆の順序で削除します。
+   **参考: scripts/rollback.sh の内容**
+
+   ```bash
+   #!/usr/bin/env bash
+   # MetalLB の設定と Operator を削除する
+   # 重要: 切り戻すと、MetalLB が割り当てた外部 IP アドレスを使用しているすべての Service にアクセスできなくなります。この手順で作成していない MetalLB のリソースがある場合は、何も削除せずに止まります。
+   # 注記: Operator を先に削除すると MetalLB のリソースの削除が終わらなくなるため、MetalLB のリソースを先に削除してから、Operator の Subscription、CSV、CRD の順に削除します。Namespace などのその他のリソースは、この後に YAML の逆順で削除します。
+   # 注記: frrk8s.metallb.io の CRD は OpenShift の Network Operator が管理しているため、削除しません。
+   set -euo pipefail
+   
+   # この手順で作成していない MetalLB のリソースが無いことを確認する
+   if oc get crd metallbs.metallb.io >/dev/null 2>&1; then
+     all=$(oc get metallb,ipaddresspool,l2advertisement,bgppeer,bgpadvertisement,bfdprofile,community --all-namespaces --no-headers -o custom-columns=KIND:.kind,NS:.metadata.namespace,NAME:.metadata.name)
+     others=$(printf '%s\n' "$all" | grep -vE '^(MetalLB +metallb-system +metallb|IPAddressPool +metallb-system +l2-pool|L2Advertisement +metallb-system +l2-adv)$' | grep . || true)
+     if [ -n "$others" ]; then
+       echo "この手順で作成していない MetalLB のリソースがあるため、止めます:"
+       echo "$others"
+       false
+     fi
+   fi
+   
+   # この手順で作成した MetalLB のリソースを削除する
+   if oc get crd metallbs.metallb.io >/dev/null 2>&1; then
+     oc delete l2advertisement l2-adv -n metallb-system --ignore-not-found --timeout=300s
+     oc delete ipaddresspool l2-pool -n metallb-system --ignore-not-found --timeout=300s
+     oc delete metallb metallb -n metallb-system --ignore-not-found --timeout=300s
+   fi
+   
+   # MetalLB Operator の Subscription と CSV を削除する
+   oc delete subscriptions.operators.coreos.com metallb-operator-sub -n metallb-system --ignore-not-found
+   oc delete csv -n metallb-system -l operators.coreos.com/metallb-operator.metallb-system --ignore-not-found
+   
+   # MetalLB Operator の CRD を削除する
+   crds=$(oc get crd -l operators.coreos.com/metallb-operator.metallb-system -o name | grep -v '\.frrk8s\.metallb\.io$' || true)
+   if [ -n "$crds" ]; then
+     oc delete $crds
+   fi
+   ```
+
+2. 次のコマンドを実行して、作成したリソースを、適用したときと逆の順序で削除します。
 
    ```terminal
    $ oc delete -f manifests/04-test-app.yaml --ignore-not-found

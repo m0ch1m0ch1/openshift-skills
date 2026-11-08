@@ -1,16 +1,16 @@
 metallb.metallb.io/metallb created
 --- check:1
-pod/controller-5f68d9f97c-5njlh condition met
-pod/controller-5f68d9f97c-5njlh condition met
-pod/speaker-4kt2b condition met
-pod/speaker-4kt2b condition met
+pod/controller-6c6b7c9c86-rsg62 condition met
+pod/controller-6c6b7c9c86-rsg62 condition met
+pod/speaker-kzjt4 condition met
+pod/speaker-kzjt4 condition met
 --- check:2
 NAME         READY   UP-TO-DATE   AVAILABLE   AGE
-controller   1/1     1            1           14s
+controller   1/1     1            1           13s
 --- check:3
 NAME      DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
-speaker   1         1         1       1            1           kubernetes.io/os=linux   15s
+speaker   1         1         1       1            1           kubernetes.io/os=linux   13s
 --- check:4
 NAME                          READY   STATUS    RESTARTS   AGE   IP              NODE                          NOMINATED NODE   READINESS GATES
-controller-5f68d9f97c-5njlh   2/2     Running   0          15s   10.128.0.201    <ノード名>                    <none>           <none>
-speaker-4kt2b                 2/2     Running   0          15s   192.0.2.82      <ノード名>                    <none>           <none>
+controller-6c6b7c9c86-rsg62   2/2     Running   0          14s   10.128.0.13     <ノード名>                    <none>           <none>
+speaker-kzjt4                 2/2     Running   0          14s   192.0.2.83      <ノード名>                    <none>           <none>
