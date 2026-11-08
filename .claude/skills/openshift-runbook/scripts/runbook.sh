@@ -727,6 +727,8 @@ script_step() {
 
 cmd_doc() {
   [ -f spec.md ] || die "spec.md がありません"
+  # 手順書の検証の節は最後のステップの check.sh から作るため、ステップが無ければ作らない
+  [ -n "$(steps)" ] || { echo "[NG] manifests/ か scripts/ にステップがありません"; echo "次: ステップを作って runbook.sh lint $SLUG"; exit 3; }
   local result s b i=0 st log last="" I="   " II="      " j
   result="$(meta result)"
   [ -n "$(meta fp)" ] && [ "$(meta fp)" != "$(fingerprint)" ] && result=STALE
